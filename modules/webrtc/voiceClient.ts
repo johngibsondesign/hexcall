@@ -5,6 +5,11 @@ export type VoiceClientOptions = {
 	roomId: string;
 	userId: string;
 	micDeviceId?: string;
+	constraints?: {
+		echoCancellation?: boolean;
+		noiseSuppression?: boolean;
+		autoGainControl?: boolean;
+	};
 };
 
 export class VoiceClient {
@@ -81,13 +86,36 @@ export class VoiceClient {
 			el.srcObject = track;
 			el.autoplay = true;
 		};
-		this.stream = await navigator.mediaDevices.getUserMedia({ audio: this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : true });
+		const saved = typeof window !== 'undefined' ? {
+			echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
+			noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
+			autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
+		} : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+		const audioConstraints: any = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
+		audioConstraints.echoCancellation = saved.echoCancellation;
+		audioConstraints.noiseSuppression = saved.noiseSuppression;
+		audioConstraints.autoGainControl = saved.autoGainControl;
+		this.stream = await navigator.mediaDevices.getUserMedia({ audio: Object.keys(audioConstraints).length ? audioConstraints : true });
 		this.setupVuMeter(this.stream);
 		this.stream.getAudioTracks().forEach((t) => this.pc!.addTrack(t, this.stream!));
 		const offer = await this.pc.createOffer({ offerToReceiveAudio: true });
 		await this.pc.setLocalDescription(offer);
 		await this.signaling.send({ type: 'offer', from: this.opts.userId, to: '*', sdp: offer });
 	};
+
+	async applyConstraints(update: Partial<NonNullable<VoiceClientOptions['constraints']>>) {
+		if (!this.stream) return;
+		const track = this.stream.getAudioTracks()[0];
+		if (!track) return;
+		const current = (track.getConstraints?.() as MediaTrackConstraints) || ({} as any);
+		const next: MediaTrackConstraints = {
+			...current,
+			...update,
+		};
+		try {
+			await (track as MediaStreamTrack).applyConstraints(next);
+		} catch {}
+	}
 
 	private onSignal = async (msg: SignalMessage) => {
 		if (!this.pc) return;

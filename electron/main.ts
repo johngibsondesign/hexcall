@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, dialog } from 'electron';
 import path from 'path';
-import { findLCUAuth, getGameflowPhase, getLobbyMembers, getLobby, getGameSession } from './lcu';
+import { findLCUAuth, getGameflowPhase, getLobbyMembers, getLobby, getGameSession, getCurrentSummoner } from './lcu';
 import { autoUpdater } from 'electron-updater';
 
 let mainWindow: BrowserWindow | null = null;
@@ -120,14 +120,15 @@ app.whenReady().then(() => {
 			return;
 		}
 		try {
-			const [phase, members, lobby, session] = await Promise.all([
+			const [phase, members, lobby, session, self] = await Promise.all([
 				getGameflowPhase(auth).catch(() => 'Unknown'),
 				getLobbyMembers(auth).catch(() => []),
 				getLobby(auth).catch(() => null),
 				getGameSession(auth).catch(() => null),
+				getCurrentSummoner(auth).catch(() => null),
 			]);
-			mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session });
-			overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session });
+			mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
+			overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
 		} catch (e) {
 			mainWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
 			overlayWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });

@@ -6,7 +6,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = Home;
 const head_1 = __importDefault(require("next/head"));
 const link_1 = __importDefault(require("next/link"));
+const react_1 = require("react");
+const VoiceProvider_1 = require("../providers/VoiceProvider");
 function Home() {
+    const { joinedRoomId } = (0, VoiceProvider_1.useVoice)();
+    const [clientStatus, setClientStatus] = (0, react_1.useState)('Waiting…');
+    const [callStatus, setCallStatus] = (0, react_1.useState)('Idle');
+    (0, react_1.useEffect)(() => {
+        const off = window.hexcall?.onLcuUpdate?.((payload) => {
+            const phase = payload?.phase || 'Unknown';
+            setClientStatus(String(phase));
+        });
+        return () => { off && off(); };
+    }, []);
+    (0, react_1.useEffect)(() => {
+        setCallStatus(joinedRoomId ? 'Connected' : 'Idle');
+    }, [joinedRoomId]);
     return (<div className="min-h-screen bg-hextech">
 			<head_1.default>
 				<title>Hexcall</title>
@@ -36,11 +51,11 @@ function Home() {
 						<div className="grid grid-cols-2 gap-4 text-sm">
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Client Status</span>
-								<div className="mt-2 font-medium" id="client-status">Waiting…</div>
+								<div className="mt-2 font-medium" id="client-status">{clientStatus}</div>
 							</div>
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Call Status</span>
-								<div className="mt-2 font-medium" id="call-status">Idle</div>
+								<div className="mt-2 font-medium" id="call-status">{callStatus}</div>
 							</div>
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Quick Mute</span>

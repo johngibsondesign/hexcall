@@ -9,6 +9,7 @@ function useVoiceRoom(roomId, userId, micDeviceId) {
     const signalingRef = (0, react_1.useRef)(null);
     const [connected, setConnected] = (0, react_1.useState)(false);
     const [canJoin, setCanJoin] = (0, react_1.useState)(false);
+    const [peerIds, setPeerIds] = (0, react_1.useState)([]);
     (0, react_1.useEffect)(() => {
         const client = new voiceClient_1.VoiceClient({ roomId, userId, micDeviceId });
         clientRef.current = client;
@@ -16,7 +17,19 @@ function useVoiceRoom(roomId, userId, micDeviceId) {
         const signaling = new signaling_1.SupabaseSignaling(roomId, userId);
         signalingRef.current = signaling;
         signaling.subscribe(() => { });
-        signaling.presence((ids) => setCanJoin(ids.length >= 2));
+        signaling.presence((peers) => {
+            const ids = peers.map(p => p.id);
+            setPeerIds(ids);
+            setCanJoin(ids.length >= 2);
+            try {
+                localStorage.setItem('hexcall-presence', JSON.stringify(ids));
+            }
+            catch { }
+            try {
+                window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids }));
+            }
+            catch { }
+        }, { userId });
         return () => {
             client.cleanup();
             clientRef.current = null;
@@ -31,5 +44,5 @@ function useVoiceRoom(roomId, userId, micDeviceId) {
         setConnected(true);
     }, [canJoin]);
     const mute = (0, react_1.useCallback)((muted) => clientRef.current?.mute(muted), []);
-    return { connected, join, mute, canJoin };
+    return { connected, join, mute, canJoin, peerIds, applyConstraints: (u) => clientRef.current?.applyConstraints(u) };
 }

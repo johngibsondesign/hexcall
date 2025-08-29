@@ -33,7 +33,16 @@ class VoiceClient {
                 el.srcObject = track;
                 el.autoplay = true;
             };
-            this.stream = await navigator.mediaDevices.getUserMedia({ audio: this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : true });
+            const saved = typeof window !== 'undefined' ? {
+                echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
+                noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
+                autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
+            } : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+            const audioConstraints = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
+            audioConstraints.echoCancellation = saved.echoCancellation;
+            audioConstraints.noiseSuppression = saved.noiseSuppression;
+            audioConstraints.autoGainControl = saved.autoGainControl;
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: Object.keys(audioConstraints).length ? audioConstraints : true });
             this.setupVuMeter(this.stream);
             this.stream.getAudioTracks().forEach((t) => this.pc.addTrack(t, this.stream));
             const offer = await this.pc.createOffer({ offerToReceiveAudio: true });
@@ -115,6 +124,22 @@ class VoiceClient {
                 requestAnimationFrame(tick);
             };
             tick();
+        }
+        catch { }
+    }
+    async applyConstraints(update) {
+        if (!this.stream)
+            return;
+        const track = this.stream.getAudioTracks()[0];
+        if (!track)
+            return;
+        const current = track.getConstraints?.() || {};
+        const next = {
+            ...current,
+            ...update,
+        };
+        try {
+            await track.applyConstraints(next);
         }
         catch { }
     }

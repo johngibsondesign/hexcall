@@ -1,0 +1,31 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: npm ci
+      - name: Create .env from secrets
+        run: |
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          echo "METERED_TURN_URL=${{ secrets.METERED_TURN_URL }}" >> .env
+          echo "METERED_TURN_USERNAME=${{ secrets.METERED_TURN_USERNAME }}" >> .env
+          echo "METERED_TURN_CREDENTIAL=${{ secrets.METERED_TURN_CREDENTIAL }}" >> .env
+      - name: Build renderer and types
+        run: npm run build
+      - name: Publish (GitHub Releases)
+        run: npx electron-builder -w -p always
+

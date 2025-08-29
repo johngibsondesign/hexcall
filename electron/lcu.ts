@@ -212,4 +212,8 @@ export async function getGameSession(auth: LCUAuth) {
 	return lcuRequest<any>(auth, '/lol-gameflow/v1/session');
 }
 
+export async function getCurrentSummoner(auth: LCUAuth) {
+	return lcuRequest<any>(auth, '/lol-summoner/v1/current-summoner');
+}
+
 

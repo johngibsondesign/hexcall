@@ -8,6 +8,7 @@ export type SignalMessage =
 export class SupabaseSignaling {
 	private channel: ReturnType<typeof supabase.channel>;
 	private userId: string;
+	private lastPresenceMeta: Record<string, any> | undefined;
 
 	constructor(roomId: string, userId: string) {
 		this.userId = userId;
@@ -30,13 +31,19 @@ export class SupabaseSignaling {
 		await this.channel.send({ type: 'broadcast', event: 'signal', payload: message });
 	}
 
-	async presence(onSync?: (ids: string[]) => void) {
+	async presence(onSync?: (peers: { id: string; meta?: any }[]) => void, meta?: Record<string, any>) {
+		this.lastPresenceMeta = meta;
 		this.channel.on('presence', { event: 'sync' }, () => {
-			const state = this.channel.presenceState<Record<string, any>>();
-			const ids = Object.keys(state);
-			onSync?.(ids);
+			const state = this.channel.presenceState<Record<string, any[]>>();
+			const peers = Object.entries(state).map(([id, metas]) => ({ id, meta: metas?.[0] }));
+			onSync?.(peers);
 		});
-		await this.channel.track({ id: this.userId, ts: Date.now() });
+		await this.channel.track({ id: this.userId, ts: Date.now(), ...(meta || {}) });
+	}
+
+	async updatePresence(meta: Record<string, any>) {
+		this.lastPresenceMeta = { ...(this.lastPresenceMeta || {}), ...meta };
+		await this.channel.track({ id: this.userId, ts: Date.now(), ...(this.lastPresenceMeta || {}) });
 	}
 
 	async close() {

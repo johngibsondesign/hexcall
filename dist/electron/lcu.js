@@ -9,6 +9,7 @@ exports.getGameflowPhase = getGameflowPhase;
 exports.getLobbyMembers = getLobbyMembers;
 exports.getLobby = getLobby;
 exports.getGameSession = getGameSession;
+exports.getCurrentSummoner = getCurrentSummoner;
 const https_1 = __importDefault(require("https"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
@@ -218,4 +219,7 @@ async function getLobby(auth) {
 }
 async function getGameSession(auth) {
     return lcuRequest(auth, '/lol-gameflow/v1/session');
+}
+async function getCurrentSummoner(auth) {
+    return lcuRequest(auth, '/lol-summoner/v1/current-summoner');
 }

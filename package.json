@@ -1,11 +1,11 @@
 {
   "name": "hexcall",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "dist/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:next\" \"npm:dev:tsc\" \"npm:dev:electron\"",
-    "dev:next": "next dev -p 3000",
+    "dev:next": "cross-env NEXT_DISABLE_CACHE=1 next dev -p 3000",
     "dev:tsc": "tsc -w --preserveWatchOutput",
     "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
     "build": "next build && tsc -p .",
@@ -37,5 +37,23 @@
     "tailwindcss": "^4.1.12",
     "typescript": "^5.9.2",
     "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.hexcall.app",
+    "productName": "Hexcall",
+    "directories": { "output": "dist_electron" },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "pages/**",
+      "lib/**",
+      "modules/**",
+      "providers/**",
+      "styles/**",
+      "next.config.js",
+      "package.json"
+    ],
+    "win": { "target": ["nsis"] },
+    "publish": [{ "provider": "github", "owner": "johngibsondesign", "repo": "hexcall" }]
   }
 }

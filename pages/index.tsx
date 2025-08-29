@@ -1,7 +1,25 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useVoice } from '../providers/VoiceProvider';
 
 export default function Home() {
+	const { joinedRoomId } = useVoice();
+	const [clientStatus, setClientStatus] = useState<string>('Waiting…');
+	const [callStatus, setCallStatus] = useState<string>('Idle');
+
+	useEffect(() => {
+		const off = window.hexcall?.onLcuUpdate?.((payload: any) => {
+			const phase = payload?.phase || 'Unknown';
+			setClientStatus(String(phase));
+		});
+		return () => { off && off(); };
+	}, []);
+
+	useEffect(() => {
+		setCallStatus(joinedRoomId ? 'Connected' : 'Idle');
+	}, [joinedRoomId]);
+
 	return (
 		<div className="min-h-screen bg-hextech">
 			<Head>
@@ -32,11 +50,11 @@ export default function Home() {
 						<div className="grid grid-cols-2 gap-4 text-sm">
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Client Status</span>
-								<div className="mt-2 font-medium" id="client-status">Waiting…</div>
+								<div className="mt-2 font-medium" id="client-status">{clientStatus}</div>
 							</div>
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Call Status</span>
-								<div className="mt-2 font-medium" id="call-status">Idle</div>
+								<div className="mt-2 font-medium" id="call-status">{callStatus}</div>
 							</div>
 							<div className="chip rounded-lg p-4">
 								<span className="text-neutral-400">Quick Mute</span>
