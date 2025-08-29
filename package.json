@@ -1,0 +1,41 @@
+{
+  "name": "hexcall",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:next\" \"npm:dev:tsc\" \"npm:dev:electron\"",
+    "dev:next": "next dev -p 3000",
+    "dev:tsc": "tsc -w --preserveWatchOutput",
+    "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
+    "build": "next build && tsc -p .",
+    "start": "next start -p 3000",
+    "build:electron": "electron-builder -w",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.56.0",
+    "electron-updater": "^6.6.2",
+    "next": "^14.2.32",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.12",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.9.2",
+    "wait-on": "^8.0.4"
+  }
+}

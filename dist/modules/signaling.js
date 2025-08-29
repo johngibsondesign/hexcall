@@ -1,0 +1,37 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SupabaseSignaling = void 0;
+const supabase_1 = require("../lib/supabase");
+class SupabaseSignaling {
+    constructor(roomId, userId) {
+        this.userId = userId;
+        this.channel = supabase_1.supabase.channel(`room:${roomId}`, {
+            config: { broadcast: { self: false } },
+        });
+    }
+    async subscribe(onMessage) {
+        await this.channel.subscribe((status) => {
+            return status === 'SUBSCRIBED';
+        });
+        this.channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
+            if (!payload)
+                return;
+            onMessage(payload);
+        });
+    }
+    async send(message) {
+        await this.channel.send({ type: 'broadcast', event: 'signal', payload: message });
+    }
+    async presence(onSync) {
+        this.channel.on('presence', { event: 'sync' }, () => {
+            const state = this.channel.presenceState();
+            const ids = Object.keys(state);
+            onSync?.(ids);
+        });
+        await this.channel.track({ id: this.userId, ts: Date.now() });
+    }
+    async close() {
+        await this.channel.unsubscribe();
+    }
+}
+exports.SupabaseSignaling = SupabaseSignaling;
