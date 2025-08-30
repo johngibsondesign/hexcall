@@ -3,16 +3,22 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: {}
+  create:
+    tags:
+      - "v*"
 jobs:
   build-windows:
     runs-on: windows-latest
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -30,4 +36,12 @@ jobs:
         run: npm run build
       - name: Publish (GitHub Releases)
         run: npx electron-builder -w -p always
+      - name: Fallback create release if publish step failed
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist_electron/**/*
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
