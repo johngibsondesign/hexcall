@@ -129,6 +129,14 @@ app.whenReady().then(() => {
 			]);
 			mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
 			overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
+			// Only show overlay when game is in progress
+			if (overlayWindow) {
+				if (phase === 'InProgress') {
+					overlayWindow.showInactive();
+				} else {
+					overlayWindow.hide();
+				}
+			}
 		} catch (e) {
 			mainWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
 			overlayWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
