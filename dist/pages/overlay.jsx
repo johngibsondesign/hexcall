@@ -3,11 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = Overlay;
 const react_1 = require("react");
 const RoleIcon_1 = require("../components/RoleIcon");
+const fa_1 = require("react-icons/fa");
 const dragStyle = { WebkitAppRegion: 'drag' };
 const noDragStyle = { WebkitAppRegion: 'no-drag' };
 function Overlay() {
     const [teammates, setTeammates] = (0, react_1.useState)([]);
     const containerRef = (0, react_1.useRef)(null);
+    const champKeyToNameRef = (0, react_1.useRef)({});
     // Connected peers filtering: VoiceProvider sets room and joins; we filter overlay to only show those in presence
     const [connectedIds, setConnectedIds] = (0, react_1.useState)([]);
     (0, react_1.useEffect)(() => {
@@ -34,6 +36,20 @@ function Overlay() {
             }
             const members = payload?.members || [];
             const sessionTeam = payload?.session?.gameData?.playerChampionSelections?.map?.((p) => p) || [];
+            const phase = payload?.phase || '';
+            const ddVer = payload?.session?.gameData?.gameDeltas?.clientVersion || payload?.session?.gameData?.gameVersion || '14.10.1';
+            // fetch champion mapping once if in game and not present
+            if (phase === 'InProgress' && Object.keys(champKeyToNameRef.current).length === 0) {
+                fetch(`https://ddragon.leagueoflegends.com/cdn/${ddVer}/data/en_US/champion.json`).then(r => r.json()).then((data) => {
+                    const map = {};
+                    for (const name of Object.keys(data.data || {})) {
+                        const key = data.data[name]?.key;
+                        if (key)
+                            map[String(key)] = name;
+                    }
+                    champKeyToNameRef.current = map;
+                }).catch(() => { });
+            }
             const byPuuid = {};
             for (const m of members) {
                 const puuid = m.puuid || m.summonerId || m.accountId || String(Math.random());
@@ -41,7 +57,7 @@ function Overlay() {
                     puuid,
                     name: m.summonerName || m.gameName || 'Player',
                     role: (m.assignedPosition || m.position || '').toLowerCase(),
-                    iconUrl: m.iconUrl,
+                    iconUrl: phase !== 'InProgress' ? (m.iconUrl || (m.profileIconId ? `https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/profileicon/${m.profileIconId}.png` : undefined)) : undefined,
                     volume: 1,
                 };
             }
@@ -52,14 +68,31 @@ function Overlay() {
                 const role = (s?.assignedPosition || s?.position || '').toLowerCase();
                 if (byPuuid[puuid])
                     byPuuid[puuid].role = role;
+                if (phase === 'InProgress') {
+                    const champ = s?.championName || s?.championId;
+                    if (champ && byPuuid[puuid]) {
+                        let name = typeof champ === 'string' ? champ : undefined;
+                        if (!name) {
+                            const mapped = champKeyToNameRef.current[String(champ)] || '';
+                            if (mapped)
+                                name = mapped;
+                        }
+                        if (name)
+                            byPuuid[puuid].iconUrl = `https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/champion/${name}.png`;
+                    }
+                }
             }
             let arr = Object.values(byPuuid);
-            // filter to only connected call peers if presence known
+            // filter to only connected call peers if presence known (always allow self if known)
             try {
                 const presence = localStorage.getItem('hexcall-presence');
                 const ids = presence ? JSON.parse(presence) : connectedIds;
+                const selfId = payload?.self?.puuid || payload?.self?.summonerId || payload?.self?.accountId;
                 if (ids && ids.length) {
-                    arr = arr.filter(t => ids.includes(t.puuid) || ids.includes(t.name));
+                    arr = arr.filter(t => ids.includes(t.puuid) || ids.includes(t.name) || (selfId && t.puuid === selfId));
+                }
+                else if (selfId) {
+                    arr = arr.filter(t => t.puuid === selfId);
                 }
             }
             catch { }
@@ -68,19 +101,21 @@ function Overlay() {
         return () => { off && off(); };
     }, []);
     const hasData = teammates.length > 0;
-    return (<div ref={containerRef} className="p-1.5 rounded-lg glass text-[11px] text-neutral-200 select-none min-w-[180px] opacity-70 hover:opacity-100 transition-opacity" style={dragStyle}>
-			<div className="flex gap-1.5">
-				{!hasData && (<div className="px-1.5 py-1 text-neutral-400">Overlay ready — waiting for lobby…</div>)}
-				{teammates.map(tm => (<div key={tm.puuid} className="group relative flex items-center gap-1.5 px-1.5 py-1 rounded chip" style={noDragStyle}>
-						<div className="w-8 h-8 rounded-full bg-neutral-800 overflow-hidden flex items-center justify-center ring-1 ring-white/10 group-hover:ring-violet-500/50 transition-shadow">
-							<RoleIcon_1.RoleIcon role={tm.role}/>
+    return (<div ref={containerRef} className="p-0.5 rounded-2xl glass text-[11px] text-neutral-200 select-none opacity-60 hover:opacity-100 transition-opacity inline-flex" style={dragStyle}>
+			<div className="flex flex-col gap-1 items-center">
+				{!hasData && (<div className="px-1.5 py-1 text-neutral-400">Overlay ready</div>)}
+				{teammates.map(tm => (<div key={tm.puuid} className="group relative flex flex-col items-center gap-1 px-1.5 py-1 rounded chip" style={noDragStyle}>
+						<div className="w-9 h-9 rounded-full bg-neutral-900 overflow-hidden flex items-center justify-center ring-1 ring-white/10 group-hover:ring-violet-500/50 transition-shadow">
+							{tm.iconUrl ? (<img src={tm.iconUrl} alt={tm.name} className="w-full h-full object-cover"/>) : (<RoleIcon_1.RoleIcon role={tm.role}/>)}
 						</div>
-						<div className="absolute -top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-							<div className="pointer-events-auto bg-neutral-950/95 border border-neutral-800 rounded p-2 shadow-xl">
-								<div className="flex items-center gap-2">
-									<button className="w-7 h-7 rounded-full chip" aria-label="Mute">🔇</button>
-									<input type="range" min={0} max={1} step={0.05} defaultValue={tm.volume ?? 1} className="w-20"/>
-									<button className="w-7 h-7 rounded-full chip" aria-label="Ping">📍</button>
+						<div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+							<div className="pointer-events-auto bg-neutral-950/95 border border-neutral-800 rounded-lg p-2 shadow-xl flex flex-col items-center gap-2">
+								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Mute"><fa_1.FaVolumeMute /></button>
+								<input type="range" min={0} max={1} step={0.05} defaultValue={tm.volume ?? 1} className="w-20"/>
+								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Ping"><fa_1.FaExclamation /></button>
+								<div className="flex gap-2">
+									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Join" onClick={() => window.__hexcall_join?.()}><fa_1.FaPhone /></button>
+									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Leave" onClick={() => window.__hexcall_leave?.()}><fa_1.FaPhoneSlash /></button>
 								</div>
 							</div>
 						</div>

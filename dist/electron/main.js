@@ -119,14 +119,15 @@ electron_1.app.whenReady().then(() => {
             return;
         }
         try {
-            const [phase, members, lobby, session] = await Promise.all([
+            const [phase, members, lobby, session, self] = await Promise.all([
                 (0, lcu_1.getGameflowPhase)(auth).catch(() => 'Unknown'),
                 (0, lcu_1.getLobbyMembers)(auth).catch(() => []),
                 (0, lcu_1.getLobby)(auth).catch(() => null),
                 (0, lcu_1.getGameSession)(auth).catch(() => null),
+                (0, lcu_1.getCurrentSummoner)(auth).catch(() => null),
             ]);
-            mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session });
-            overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session });
+            mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
+            overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
         }
         catch (e) {
             mainWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });

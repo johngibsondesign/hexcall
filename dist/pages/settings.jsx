@@ -54,6 +54,7 @@ function Settings() {
     const [noiseSuppression, setNoiseSuppression] = (0, react_1.useState)(true);
     const [autoGainControl, setAutoGainControl] = (0, react_1.useState)(true);
     const [noiseGate, setNoiseGate] = (0, react_1.useState)(0.03);
+    const [autoJoin, setAutoJoin] = (0, react_1.useState)(true);
     const micCtxRef = (0, react_1.useRef)(null);
     const micAnalyserRef = (0, react_1.useRef)(null);
     const micRafRef = (0, react_1.useRef)(null);
@@ -84,6 +85,9 @@ function Settings() {
                 setAutoGainControl(agc !== '0');
             if (ng !== null)
                 setNoiseGate(Number(ng));
+            const aj = localStorage.getItem('hexcall-auto-join');
+            if (aj !== null)
+                setAutoJoin(aj !== '0');
         }
         catch { }
     }, []);
@@ -189,6 +193,10 @@ function Settings() {
         }
         catch { }
     }, [usePushToTalk]);
+    (0, react_1.useEffect)(() => { try {
+        localStorage.setItem('hexcall-auto-join', autoJoin ? '1' : '0');
+    }
+    catch { } }, [autoJoin]);
     (0, react_1.useEffect)(() => { try {
         localStorage.setItem('hexcall-audio-ec', echoCancellation ? '1' : '0');
     }
@@ -307,6 +315,7 @@ function Settings() {
 								<input type="checkbox" checked={usePushToTalk} onChange={e => setUsePushToTalk(e.target.checked)}/>
 								<input className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2" value={pushToTalkKey} onChange={e => setPushToTalkKey(e.target.value)}/>
 							</div>
+							<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={autoJoin} onChange={e => setAutoJoin(e.target.checked)}/> Auto join calls (recommended)</label>
 						</div>
 						<div className="mt-5 grid gap-3">
 							<h3 className="text-xs text-neutral-400">Audio Improvements</h3>

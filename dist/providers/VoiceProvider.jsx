@@ -43,7 +43,7 @@ function VoiceProvider({ children }) {
     const [roomId, setRoomId] = (0, react_1.useState)(undefined);
     const [micDeviceId, setMicDeviceId] = (0, react_1.useState)(undefined);
     const userId = (0, react_1.useMemo)(() => 'local-' + getStableUserId(), []);
-    const { connected, join, mute } = (0, useVoiceRoom_1.useVoiceRoom)(roomId || 'idle', userId, micDeviceId);
+    const { connected, join, leave, mute } = (0, useVoiceRoom_1.useVoiceRoom)(roomId || 'idle', userId, micDeviceId);
     (0, react_1.useEffect)(() => {
         const offUpdate = window.hexcall?.onLcuUpdate?.((payload) => {
             const phase = payload?.phase;
@@ -53,6 +53,15 @@ function VoiceProvider({ children }) {
             // join when in lobby or in progress with teammates
             if (['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'].includes(phase)) {
                 setRoomId(newRoom);
+            }
+            // Leave at EndOfGame unless the room was created in lobby and still same party
+            if (phase === 'EndOfGame') {
+                // if we had a lobby-derived room, keep; otherwise leave
+                if (!payload?.lobby?.lobbyId && !payload?.lobby?.partyId) {
+                    leave();
+                    setMuted(false);
+                    setRoomId(undefined);
+                }
             }
         });
         const offHotkey = window.hexcall?.onHotkeyToggleMute?.(() => {
@@ -67,13 +76,32 @@ function VoiceProvider({ children }) {
         mute(muted);
     }, [muted, mute]);
     (0, react_1.useEffect)(() => {
-        if (roomId && !connected) {
-            join();
+        const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
+        if (auto && roomId && !connected) {
+            // allow joining alone (will form mesh when others arrive)
+            join(true);
         }
     }, [roomId, connected, join]);
-    const value = (0, react_1.useMemo)(() => ({ muted, setMuted, joinedRoomId: roomId }), [muted, roomId]);
+    const value = (0, react_1.useMemo)(() => ({ muted, setMuted, joinedRoomId: roomId, connected, joinCall: join, leaveCall: leave }), [muted, roomId, connected, join, leave]);
+    (0, react_1.useEffect)(() => {
+        try {
+            window.__hexcall_join = () => join(true);
+            window.__hexcall_leave = () => leave();
+        }
+        catch { }
+    }, [join, leave]);
     return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }
 function useVoice() {
     return (0, react_1.useContext)(VoiceContext);
+}
+// Expose global helpers for overlay buttons (dev-time convenience)
+if (typeof window !== 'undefined') {
+    try {
+        const ctx = window;
+        // These will be rebound via React effects when provider mounts by reading context
+        ctx.__hexcall_join = () => { };
+        ctx.__hexcall_leave = () => { };
+    }
+    catch { }
 }

@@ -2,7 +2,5 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/overlay": "pages/overlay.js",
-  "/settings": "pages/settings.js"
+  "/": "pages/index.js"
 }

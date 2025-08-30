@@ -4,12 +4,21 @@ exports.SupabaseSignaling = void 0;
 const supabase_1 = require("../lib/supabase");
 class SupabaseSignaling {
     constructor(roomId, userId) {
+        this.channel = null;
+        this.disabled = false;
         this.userId = userId;
-        this.channel = supabase_1.supabase.channel(`room:${roomId}`, {
+        const sb = (0, supabase_1.getSupabase)();
+        if (!sb) {
+            this.disabled = true;
+            return;
+        }
+        this.channel = sb.channel(`room:${roomId}`, {
             config: { broadcast: { self: false } },
         });
     }
     async subscribe(onMessage) {
+        if (this.disabled || !this.channel)
+            return true;
         await this.channel.subscribe((status) => {
             return status === 'SUBSCRIBED';
         });
@@ -20,10 +29,16 @@ class SupabaseSignaling {
         });
     }
     async send(message) {
+        if (this.disabled || !this.channel)
+            return;
         await this.channel.send({ type: 'broadcast', event: 'signal', payload: message });
     }
     async presence(onSync, meta) {
         this.lastPresenceMeta = meta;
+        if (this.disabled || !this.channel) {
+            onSync?.([]);
+            return;
+        }
         this.channel.on('presence', { event: 'sync' }, () => {
             const state = this.channel.presenceState();
             const peers = Object.entries(state).map(([id, metas]) => ({ id, meta: metas?.[0] }));
@@ -33,9 +48,13 @@ class SupabaseSignaling {
     }
     async updatePresence(meta) {
         this.lastPresenceMeta = { ...(this.lastPresenceMeta || {}), ...meta };
+        if (this.disabled || !this.channel)
+            return;
         await this.channel.track({ id: this.userId, ts: Date.now(), ...(this.lastPresenceMeta || {}) });
     }
     async close() {
+        if (this.disabled || !this.channel)
+            return;
         await this.channel.unsubscribe();
     }
 }
