@@ -32,14 +32,16 @@ jobs:
           echo "METERED_TURN_URL=${{ secrets.METERED_TURN_URL }}" >> .env
           echo "METERED_TURN_USERNAME=${{ secrets.METERED_TURN_USERNAME }}" >> .env
           echo "METERED_TURN_CREDENTIAL=${{ secrets.METERED_TURN_CREDENTIAL }}" >> .env
-      - name: Build renderer and electron
+      - name: Build renderer
         run: npm run build
-      - name: Publish (GitHub Releases)
-        run: npx electron-builder -w -p always
-      - name: Fallback create release if publish step failed
-        if: failure()
+      - name: Package app (no publish)
+        run: npx electron-builder -w -p never
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: |
             dist_electron/**/*
         env:
