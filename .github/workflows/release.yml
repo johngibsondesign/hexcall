@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 20
       - name: Install
-        run: npm ci
+        run: npm install
       - name: Create .env from secrets
         run: |
           echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
