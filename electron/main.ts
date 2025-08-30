@@ -24,7 +24,7 @@ function createMainWindow() {
 
 	const startUrl = process.env.NODE_ENV === 'development'
 		? 'http://localhost:3000'
-		: `file://${path.join(__dirname, '../renderer/index.html')}`;
+		: `file://${path.join(process.resourcesPath || __dirname, '..', 'renderer', 'index.html')}`;
 
 	mainWindow.loadURL(startUrl);
 
@@ -52,7 +52,7 @@ function createOverlayWindow() {
 
 	const startUrl = process.env.NODE_ENV === 'development'
 		? 'http://localhost:3000/overlay'
-		: `file://${path.join(__dirname, '../renderer/overlay.html')}`;
+		: `file://${path.join(process.resourcesPath || __dirname, '..', 'renderer', 'overlay', 'index.html')}`;
 
 	overlayWindow.loadURL(startUrl);
 	overlayWindow.setAlwaysOnTop(true, 'floating');

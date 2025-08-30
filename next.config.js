@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	reactStrictMode: true,
+	output: 'export',
+	assetPrefix: './',
 	webpack: (config) => {
 		config.externals = config.externals || [];
 		config.externals.push({ electron: 'commonjs2 electron' });

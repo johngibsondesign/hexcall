@@ -3,7 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = Overlay;
 const react_1 = require("react");
 const RoleIcon_1 = require("../components/RoleIcon");
-const fa_1 = require("react-icons/fa");
+const fa6_1 = require("react-icons/fa6");
+const fa6_2 = require("react-icons/fa6");
 const dragStyle = { WebkitAppRegion: 'drag' };
 const noDragStyle = { WebkitAppRegion: 'no-drag' };
 function Overlay() {
@@ -110,12 +111,12 @@ function Overlay() {
 						</div>
 						<div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
 							<div className="pointer-events-auto bg-neutral-950/95 border border-neutral-800 rounded-lg p-2 shadow-xl flex flex-col items-center gap-2">
-								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Mute"><fa_1.FaVolumeMute /></button>
+								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Mute"><fa6_2.FaVolumeXmark /></button>
 								<input type="range" min={0} max={1} step={0.05} defaultValue={tm.volume ?? 1} className="w-20"/>
-								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Ping"><fa_1.FaExclamation /></button>
+								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Ping"><fa6_1.FaExclamation /></button>
 								<div className="flex gap-2">
-									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Join" onClick={() => window.__hexcall_join?.()}><fa_1.FaPhone /></button>
-									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Leave" onClick={() => window.__hexcall_leave?.()}><fa_1.FaPhoneSlash /></button>
+									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Join" onClick={() => window.__hexcall_join?.()}><fa6_1.FaPhone /></button>
+									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Leave" onClick={() => window.__hexcall_leave?.()}><fa6_1.FaPhoneSlash /></button>
 								</div>
 							</div>
 						</div>

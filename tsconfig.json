@@ -10,7 +10,7 @@
     "outDir": "dist",
     "baseUrl": ".",
     "strict": true,
-    "noEmit": false,
+    "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
