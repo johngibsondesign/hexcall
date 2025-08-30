@@ -8,7 +8,7 @@
     "dev:next": "cross-env NEXT_DISABLE_CACHE=1 next dev -p 3000",
     "dev:tsc": "tsc -w --preserveWatchOutput",
     "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
-    "build": "next build && tsc -p .",
+    "build": "next build && node scripts/build-electron.mjs",
     "start": "next start -p 3000",
     "build:electron": "electron-builder -w",
     "test": "echo \"No tests yet\" && exit 0"
@@ -33,6 +33,7 @@
     "concurrently": "^9.2.1",
     "cross-env": "^10.0.0",
     "electron": "^37.4.0",
+    "esbuild": "^0.23.0",
     "electron-builder": "^26.0.12",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.12",

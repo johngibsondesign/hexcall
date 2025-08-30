@@ -32,7 +32,7 @@ jobs:
           echo "METERED_TURN_URL=${{ secrets.METERED_TURN_URL }}" >> .env
           echo "METERED_TURN_USERNAME=${{ secrets.METERED_TURN_USERNAME }}" >> .env
           echo "METERED_TURN_CREDENTIAL=${{ secrets.METERED_TURN_CREDENTIAL }}" >> .env
-      - name: Build renderer and types
+      - name: Build renderer and electron
         run: npm run build
       - name: Publish (GitHub Releases)
         run: npx electron-builder -w -p always
