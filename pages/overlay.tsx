@@ -7,6 +7,8 @@ import { useVoice } from '../providers/VoiceProvider';
 const dragStyle = { WebkitAppRegion: 'drag' } as any;
 const noDragStyle = { WebkitAppRegion: 'no-drag' } as any;
 
+const DEFAULT_DD_VER = '14.20.1';
+
 type Teammate = {
 	puuid: string;
 	name: string;
@@ -21,11 +23,9 @@ export default function Overlay() {
 	const containerRef = useRef<HTMLDivElement>(null);
     const champKeyToNameRef = useRef<Record<string, string>>({});
 
-    // Connected peers filtering: VoiceProvider sets room and joins; we filter overlay to only show those in presence
+    // Connected peers filtering
     const [connectedIds, setConnectedIds] = useState<string[]>([]);
     useEffect(() => {
-        const anyWindow = window as any;
-        // listen to presence via a lightweight custom event from Voice layer if exposed; fallback to localStorage polling
         const handler = (e: any) => {
             if (Array.isArray(e?.detail)) setConnectedIds(e.detail);
         };
@@ -39,14 +39,13 @@ export default function Overlay() {
 
 	useEffect(() => {
 		const off = window.hexcall?.onLcuUpdate?.((payload: any) => {
-			// Show phase unobtrusively for debugging status
 			if (payload?.phase && containerRef.current) {
 				containerRef.current.dataset.phase = String(payload.phase);
 			}
 			const members: any[] = payload?.members || [];
 			const sessionTeam: any[] = payload?.session?.gameData?.playerChampionSelections?.map?.((p: any) => p) || [];
 			const phase: string = payload?.phase || '';
-			const ddVer = payload?.session?.gameData?.gameDeltas?.clientVersion || payload?.session?.gameData?.gameVersion || '14.10.1';
+			let ddVer = payload?.session?.gameData?.gameDeltas?.clientVersion || payload?.session?.gameData?.gameVersion || DEFAULT_DD_VER;
 
 			// fetch champion mapping once if in game and not present
 			if (phase === 'InProgress' && Object.keys(champKeyToNameRef.current).length === 0) {
@@ -90,7 +89,6 @@ export default function Overlay() {
 				}
 			}
 			let arr = Object.values(byPuuid) as Teammate[];
-			// filter to only connected call peers if presence known (always allow self if known)
 			try {
 				const presence = localStorage.getItem('hexcall-presence');
 				const ids: string[] = presence ? JSON.parse(presence) : connectedIds;
@@ -111,16 +109,16 @@ export default function Overlay() {
 	return (
 		<div
 			ref={containerRef}
-			className="p-0.5 rounded-2xl glass text-[11px] text-neutral-200 select-none opacity-60 hover:opacity-100 transition-opacity inline-flex"
+			className="rounded-xl select-none opacity-60 hover:opacity-100 transition-opacity inline-flex bg-neutral-900/50 backdrop-blur-[2px] p-1"
 			style={dragStyle}
 		>
 			<div className="flex flex-col gap-1 items-center">
 				{!hasData && (
-					<div className="px-1.5 py-1 text-neutral-400">Overlay ready</div>
+					<div className="px-1.5 py-1 text-neutral-400 text-[10px]">Overlay ready</div>
 				)}
 				{teammates.map(tm => (
-					<div key={tm.puuid} className="group relative flex flex-col items-center gap-1 px-1.5 py-1 rounded chip" style={noDragStyle}>
-						<div className="w-9 h-9 rounded-full bg-neutral-900 overflow-hidden flex items-center justify-center ring-1 ring-white/10 group-hover:ring-violet-500/50 transition-shadow">
+					<div key={tm.puuid} className="group relative flex flex-col items-center" style={noDragStyle}>
+						<div className="w-9 h-9 rounded-full bg-neutral-900/70 overflow-hidden flex items-center justify-center ring-1 ring-white/10 group-hover:ring-violet-500/50 transition-shadow">
 							{tm.iconUrl ? (
 								<img src={tm.iconUrl} alt={tm.name} className="w-full h-full object-cover" />
 							) : (
@@ -129,12 +127,12 @@ export default function Overlay() {
 						</div>
 						<div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
 							<div className="pointer-events-auto bg-neutral-950/95 border border-neutral-800 rounded-lg p-2 shadow-xl flex flex-col items-center gap-2">
-								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Mute"><FaVolumeMute /></button>
+								<button className="w-7 h-7 rounded-full chip flex items-center justify-center" aria-label="Mute"><FaVolumeMute /></button>
 								<input type="range" min={0} max={1} step={0.05} defaultValue={tm.volume ?? 1} className="w-20" />
-								<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Ping"><FaExclamation /></button>
+								<button className="w-7 h-7 rounded-full chip flex items-center justify-center" aria-label="Ping"><FaExclamation /></button>
 								<div className="flex gap-2">
-									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Join" onClick={() => (window as any).__hexcall_join?.()}><FaPhone /></button>
-									<button className="w-8 h-8 rounded-full chip flex items-center justify-center" aria-label="Leave" onClick={() => (window as any).__hexcall_leave?.()}><FaPhoneSlash /></button>
+									<button className="w-7 h-7 rounded-full chip flex items-center justify-center" aria-label="Join" onClick={() => (window as any).__hexcall_join?.()}><FaPhone /></button>
+									<button className="w-7 h-7 rounded-full chip flex items-center justify-center" aria-label="Leave" onClick={() => (window as any).__hexcall_leave?.()}><FaPhoneSlash /></button>
 								</div>
 							</div>
 						</div>

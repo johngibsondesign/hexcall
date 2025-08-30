@@ -1,24 +1,25 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useVoice } from '../providers/VoiceProvider';
 
 export default function Home() {
-	const { joinedRoomId } = useVoice();
+	const { joinedRoomId, connected, joinCall, leaveCall } = useVoice() as any;
 	const [clientStatus, setClientStatus] = useState<string>('Waiting…');
-	const [callStatus, setCallStatus] = useState<string>('Idle');
+	const [phase, setPhase] = useState<string>('Unknown');
 
 	useEffect(() => {
 		const off = window.hexcall?.onLcuUpdate?.((payload: any) => {
-			const phase = payload?.phase || 'Unknown';
-			setClientStatus(String(phase));
+			const p = payload?.phase || 'Unknown';
+			setClientStatus(String(p));
+			setPhase(String(p));
 		});
 		return () => { off && off(); };
 	}, []);
 
-	useEffect(() => {
-		setCallStatus(joinedRoomId ? 'Connected' : 'Idle');
-	}, [joinedRoomId]);
+	const inLobbyOrPregame = useMemo(() => (
+		['Matchmaking','ReadyCheck','ChampSelect','Lobby'].includes(phase)
+	), [phase]);
 
 	return (
 		<div className="min-h-screen bg-hextech">
@@ -47,24 +48,36 @@ export default function Home() {
 						</div>
 					</div>
 					<div className="glass rounded-xl p-6 border border-white/10">
-						<div className="grid grid-cols-2 gap-4 text-sm">
-							<div className="chip rounded-lg p-4">
-								<span className="text-neutral-400">Client Status</span>
-								<div className="mt-2 font-medium" id="client-status">{clientStatus}</div>
+						{inLobbyOrPregame ? (
+							<div className="flex flex-col gap-4">
+								<div className="text-sm text-neutral-400">Lobby Controls</div>
+								<div className="flex gap-3">
+									<button className="btn-primary px-4 py-2 rounded" onClick={() => joinCall?.(true)}>Join</button>
+									<button className="px-4 py-2 rounded chip border border-white/10" onClick={() => leaveCall?.()}>Leave</button>
+								</div>
+								<div className="text-sm text-neutral-300">Room: {joinedRoomId || 'None'} {connected ? '(Connected)' : ''}</div>
+								<div className="text-xs text-neutral-500">Overlay appears automatically in-game.</div>
 							</div>
-							<div className="chip rounded-lg p-4">
-								<span className="text-neutral-400">Call Status</span>
-								<div className="mt-2 font-medium" id="call-status">{callStatus}</div>
+						) : (
+							<div className="grid grid-cols-2 gap-4 text-sm">
+								<div className="chip rounded-lg p-4">
+									<span className="text-neutral-400">Client Status</span>
+									<div className="mt-2 font-medium" id="client-status">{clientStatus}</div>
+								</div>
+								<div className="chip rounded-lg p-4">
+									<span className="text-neutral-400">Overlay</span>
+									<div className="mt-2 font-medium">Shown in-game</div>
+								</div>
+								<div className="chip rounded-lg p-4">
+									<span className="text-neutral-400">Quick Mute</span>
+									<div className="mt-2 font-medium">Ctrl+Shift+M</div>
+								</div>
+								<div className="chip rounded-lg p-4">
+									<span className="text-neutral-400">TURN</span>
+									<div className="mt-2 font-medium">Metered configured</div>
+								</div>
 							</div>
-							<div className="chip rounded-lg p-4">
-								<span className="text-neutral-400">Quick Mute</span>
-								<div className="mt-2 font-medium">Ctrl+Shift+M</div>
-							</div>
-							<div className="chip rounded-lg p-4">
-								<span className="text-neutral-400">TURN</span>
-								<div className="mt-2 font-medium">Metered configured</div>
-							</div>
-						</div>
+						)}
 					</div>
 				</section>
 			</main>

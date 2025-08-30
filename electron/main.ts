@@ -24,7 +24,7 @@ function createMainWindow() {
 
 	const startUrl = process.env.NODE_ENV === 'development'
 		? 'http://localhost:3000'
-		: `file://${path.join(process.resourcesPath || __dirname, '..', 'renderer', 'index.html')}`;
+		: `file://${path.join(process.resourcesPath || __dirname, '..', 'out', 'index.html')}`;
 
 	mainWindow.loadURL(startUrl);
 
@@ -35,8 +35,8 @@ function createMainWindow() {
 
 function createOverlayWindow() {
 	overlayWindow = new BrowserWindow({
-		width: Math.round(260 * overlayScale),
-		height: Math.round(120 * overlayScale),
+		width: Math.round(44 * overlayScale),
+		height: Math.round(44 * overlayScale),
 		alwaysOnTop: true,
 		frame: false,
 		transparent: true,
@@ -52,7 +52,7 @@ function createOverlayWindow() {
 
 	const startUrl = process.env.NODE_ENV === 'development'
 		? 'http://localhost:3000/overlay'
-		: `file://${path.join(process.resourcesPath || __dirname, '..', 'renderer', 'overlay', 'index.html')}`;
+		: `file://${path.join(process.resourcesPath || __dirname, '..', 'out', 'overlay', 'index.html')}`;
 
 	overlayWindow.loadURL(startUrl);
 	overlayWindow.setAlwaysOnTop(true, 'floating');
@@ -164,8 +164,8 @@ ipcMain.handle('overlay:set-bounds', (_e, bounds: Electron.Rectangle) => {
 ipcMain.handle('overlay:set-scale', (_e, scale: number) => {
 	overlayScale = Math.max(0.75, Math.min(1.5, Number(scale) || 1));
 	if (!overlayWindow) return;
-	const width = Math.round(260 * overlayScale);
-	const height = Math.round(120 * overlayScale);
+	const width = Math.round(44 * overlayScale);
+	const height = Math.round(44 * overlayScale);
 	positionOverlay(width, height);
 });
 
