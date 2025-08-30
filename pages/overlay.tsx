@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RoleIcon } from '../components/RoleIcon';
-import { FaVolumeMute, FaPhone, FaPhoneSlash, FaExclamation } from 'react-icons/fa';
+import { FaPhone, FaPhoneSlash, FaExclamation } from 'react-icons/fa6';
+import { FaVolumeXmark as FaVolumeMute } from 'react-icons/fa6';
 import { useVoice } from '../providers/VoiceProvider';
 
 const dragStyle = { WebkitAppRegion: 'drag' } as any;
