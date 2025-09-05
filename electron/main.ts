@@ -28,8 +28,9 @@ function createMainWindow() {
 	if (isDev) {
 		mainWindow.loadURL('http://localhost:3000');
 	} else {
-		// In production, load from the app's resources
-		const indexPath = path.join(__dirname, '..', 'out', 'index.html');
+		// In production, load from the packaged app root (app.asar)
+		const appRoot = app.getAppPath();
+		const indexPath = path.join(appRoot, 'out', 'index.html');
 		console.log('[MAIN] Loading main window from:', indexPath);
 		mainWindow.loadFile(indexPath);
 	}
@@ -71,8 +72,9 @@ function createOverlayWindow() {
 	if (isDev) {
 		overlayWindow.loadURL('http://localhost:3000/overlay');
 	} else {
-		// In production, load from the app's resources - Next.js now generates overlay/index.html
-		const overlayPath = path.join(__dirname, '..', 'out', 'overlay', 'index.html');
+		// In production, load from the packaged app root (app.asar)
+		const appRoot = app.getAppPath();
+		const overlayPath = path.join(appRoot, 'out', 'overlay', 'index.html');
 		console.log('[OVERLAY] Loading overlay window from:', overlayPath);
 		overlayWindow.loadFile(overlayPath);
 	}
