@@ -5,6 +5,10 @@ const nextConfig = {
 	...(process.env.NODE_ENV === 'production' && {
 		output: 'export',
 		assetPrefix: './',
+		trailingSlash: true,
+		images: {
+			unoptimized: true,
+		},
 	}),
 	// Disable caching in development to prevent file lock issues
 	...(process.env.NODE_ENV === 'development' && {

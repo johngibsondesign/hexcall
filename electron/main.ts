@@ -19,6 +19,7 @@ function createMainWindow() {
 			preload: path.join(__dirname, 'preload.js'),
 			contextIsolation: true,
 			nodeIntegration: false,
+			webSecurity: false, // Allow loading local resources in production
 		},
 	});
 
@@ -51,6 +52,7 @@ function createOverlayWindow() {
 			preload: path.join(__dirname, 'preload.js'),
 			contextIsolation: true,
 			nodeIntegration: false,
+			webSecurity: false, // Allow loading local resources in production
 		},
 	});
 
