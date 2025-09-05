@@ -151,7 +151,7 @@ export default function Home() {
 	const handleCreateManualCall = async () => {
 		try {
 			const code = await createManualCall?.();
-			await joinCall?.(true);
+			// Auto-join will handle the connection
 		} catch (error) {
 			console.error('Failed to create manual call:', error);
 		}
@@ -163,7 +163,7 @@ export default function Home() {
 		setIsJoining(true);
 		try {
 			await joinByCode?.(joinCode.trim());
-			await joinCall?.(true);
+			// Auto-join will handle the connection
 			setShowJoinModal(false);
 			setJoinCode('');
 		} catch (error) {

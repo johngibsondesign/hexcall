@@ -97,24 +97,26 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
-      // Don't auto-join League calls if we're in a manual call
+      // Don't interfere with manual calls
       if (isManualCall) return;
-      
+
       const phase = payload?.phase;
       const members: any[] = Array.isArray(payload?.members) ? payload.members : [];
       const newRoom = deriveRoomId(payload);
 
       const allowedPhases = ['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'];
 
-      // Only auto-set room when we actually have a party (>=2)
+      // Only auto-set room when we actually have a party (>=2) and phase allows it
       if (newRoom && allowedPhases.includes(phase) && members.length >= 2) {
         if (newRoom !== roomId) {
-        setRoomId(newRoom);
-        setIsManualCall(false);
-      }
-      } else {
-        // Outside allowed phases or solo -> leave any auto room
+          console.log('[VoiceProvider] Auto-joining League room:', newRoom);
+          setRoomId(newRoom);
+          setIsManualCall(false);
+        }
+      } else if (phase === 'EndOfGame' || phase === 'NotFound' || !allowedPhases.includes(phase) || members.length < 2) {
+        // Only leave auto rooms, not manual ones
         if (roomId && !isManualCall) {
+          console.log('[VoiceProvider] Leaving auto room due to phase/member change');
           leave();
           setMuted(false);
           setRoomId(undefined);
@@ -137,14 +139,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
     if (auto && roomId && !connected) {
-      // For auto rooms, join only if not manual and phase-derived party exists (handled by setter)
-      if (!isManualCall) join(true);
+      // Auto-join for League rooms or manual calls
+      join(true);
     }
-  }, [roomId, connected, join, isManualCall]);
+  }, [roomId, connected, join]);
 
   // Manual call functions
   const createManualCall = async (): Promise<string> => {
     const callRoom = `manual-${userCode}`;
+    console.log('[VoiceProvider] Creating manual call room:', callRoom);
     setRoomId(callRoom);
     setIsManualCall(true);
     return userCode;
