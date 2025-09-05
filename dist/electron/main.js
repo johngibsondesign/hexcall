@@ -1,200 +1,494 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
 };
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-const path_1 = __importDefault(require("path"));
-const lcu_1 = require("./lcu");
-const electron_updater_1 = require("electron-updater");
-let mainWindow = null;
-let overlayWindow = null;
-let overlayScale = 1;
-let overlayCorner = 'top-right';
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// electron/main.ts
+var import_electron = require("electron");
+var import_path2 = __toESM(require("path"));
+
+// electron/lcu.ts
+var import_https = __toESM(require("https"));
+var import_fs = __toESM(require("fs"));
+var import_path = __toESM(require("path"));
+var import_os = __toESM(require("os"));
+var import_child_process = require("child_process");
+function candidateLockfilePaths() {
+  const candidates = /* @__PURE__ */ new Set();
+  const env = process.env;
+  const local = env.LOCALAPPDATA || import_path.default.join(import_os.default.homedir(), "AppData", "Local");
+  const programFiles = env["ProgramFiles"] || "C:/Program Files";
+  const programFilesX86 = env["ProgramFiles(x86)"] || "C:/Program Files (x86)";
+  const systemDrive = env["SystemDrive"] || "C:";
+  candidates.add(import_path.default.join(local, "Riot Games", "Riot Client", "Config", "lockfile"));
+  candidates.add(import_path.default.join(programFiles, "Riot Games", "League of Legends", "lockfile"));
+  candidates.add(import_path.default.join(programFilesX86, "Riot Games", "League of Legends", "lockfile"));
+  candidates.add(import_path.default.join(systemDrive, "Riot Games", "League of Legends", "lockfile"));
+  ["C:", "D:", "E:", "F:", "G:"].forEach((drive) => {
+    candidates.add(import_path.default.join(drive, "Riot Games", "League of Legends", "lockfile"));
+    candidates.add(import_path.default.join(drive, "Riot Games", "League of Legends", "Game", "lockfile"));
+    candidates.add(import_path.default.join(drive, "Program Files", "Riot Games", "League of Legends", "lockfile"));
+    candidates.add(import_path.default.join(drive, "Program Files (x86)", "Riot Games", "League of Legends", "lockfile"));
+    candidates.add(import_path.default.join(drive, "Games", "Riot Games", "League of Legends", "lockfile"));
+    candidates.add(import_path.default.join(drive, "Games", "League of Legends", "lockfile"));
+  });
+  candidates.add(import_path.default.join(import_os.default.homedir(), "Library", "Application Support", "League of Legends", "lockfile"));
+  candidates.add("/Applications/League of Legends.app/Contents/LoL/lockfile");
+  return Array.from(candidates);
+}
+function findLCUAuth() {
+  console.log("[LCU] Starting League client detection...");
+  if (process.platform === "win32") {
+    console.log("[LCU] Trying Windows process detection methods...");
+    const fromCim = getAuthFromProcessWindowsCIM();
+    if (fromCim) {
+      console.log("[LCU] Found auth via CIM");
+      return fromCim;
+    }
+    const fromWmic = getAuthFromProcessWindowsWMIC();
+    if (fromWmic) {
+      console.log("[LCU] Found auth via WMIC");
+      return fromWmic;
+    }
+    const fromGetProcess = getAuthFromProcessWindowsGetProcess();
+    if (fromGetProcess) {
+      console.log("[LCU] Found auth via Get-Process");
+      return fromGetProcess;
+    }
+    const fromRiotJson = getAuthFromRiotClientInstalls();
+    if (fromRiotJson) {
+      console.log("[LCU] Found auth via Riot JSON");
+      return fromRiotJson;
+    }
+  }
+  console.log("[LCU] Trying lockfile detection...");
+  const paths = candidateLockfilePaths();
+  console.log("[LCU] Checking", paths.length, "lockfile paths");
+  for (const p of paths) {
+    try {
+      if (!import_fs.default.existsSync(p)) continue;
+      console.log("[LCU] Found lockfile at:", p);
+      const content = import_fs.default.readFileSync(p, "utf8");
+      const [name, pid, port, password, protocol] = content.split(":");
+      const auth = { protocol, address: "127.0.0.1", port: Number(port), username: "riot", password };
+      console.log("[LCU] Successfully parsed lockfile auth:", { port: auth.port });
+      return auth;
+    } catch (error) {
+      console.log("[LCU] Error reading lockfile", p, ":", error);
+    }
+  }
+  console.log("[LCU] No League client found");
+  return null;
+}
+function parseAuthFromCmdLine(line) {
+  const portMatch = line.match(/--app-port=(\d+)/);
+  const tokenMatch = line.match(/--remoting-auth-token=([^\s\"]+)/) || line.match(/--remoting-auth-token=\"([^\"]+)\"/);
+  if (!portMatch || !tokenMatch) return null;
+  const port = Number(portMatch[1]);
+  const password = tokenMatch[1];
+  return { protocol: "https", address: "127.0.0.1", port, username: "riot", password };
+}
+function getAuthFromProcessWindowsCIM() {
+  try {
+    const ps = "powershell.exe";
+    const cmd = `$p = Get-CimInstance Win32_Process -Filter "Name='LeagueClientUx.exe' OR Name='LeagueClientUxRender.exe' OR Name='LeagueClient.exe' OR Name='RiotClientServices.exe'" | Select-Object -ExpandProperty CommandLine; if ($p) { $p }`;
+    const buf = (0, import_child_process.execFileSync)(ps, ["-NoProfile", "-Command", cmd], { stdio: ["ignore", "pipe", "ignore"], timeout: 2e3 });
+    const line = buf.toString("utf8").replace(/\r/g, "").trim();
+    if (!line) return null;
+    return parseAuthFromCmdLine(line);
+  } catch {
+    return null;
+  }
+}
+function getAuthFromProcessWindowsWMIC() {
+  try {
+    const buf = (0, import_child_process.execFileSync)("wmic", ["process", "where", '(name="LeagueClientUx.exe" or name="LeagueClientUxRender.exe" or name="LeagueClient.exe" or name="RiotClientServices.exe")', "get", "CommandLine"], { stdio: ["ignore", "pipe", "ignore"], timeout: 2e3 });
+    const out = buf.toString("utf8");
+    const lines = out.split(/\r?\n/);
+    for (const l of lines) {
+      const auth = parseAuthFromCmdLine(l);
+      if (auth) return auth;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function getAuthFromProcessWindowsGetProcess() {
+  try {
+    const ps = "powershell.exe";
+    const cmd = "Get-Process LeagueClient*,RiotClientServices* -IncludeUserName | Select-Object -ExpandProperty Path | ForEach-Object { (Get-Item $_).DirectoryName }";
+    const buf = (0, import_child_process.execFileSync)(ps, ["-NoProfile", "-Command", cmd], { stdio: ["ignore", "pipe", "ignore"], timeout: 2e3 });
+    const dirs = buf.toString("utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    for (const dir of dirs) {
+      const lockfileCandidates = [
+        import_path.default.join(dir, "lockfile"),
+        import_path.default.join(dir, "Config", "lockfile")
+        // Riot Client
+      ];
+      for (const lf of lockfileCandidates) {
+        if (import_fs.default.existsSync(lf)) {
+          const content = import_fs.default.readFileSync(lf, "utf8");
+          const [name, pid, port, password, protocol] = content.split(":");
+          return { protocol, address: "127.0.0.1", port: Number(port), username: "riot", password };
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function getAuthFromRiotClientInstalls() {
+  try {
+    const programData = process.env["ProgramData"] || "C:/ProgramData";
+    const jsonPath = import_path.default.join(programData, "Riot Games", "RiotClientInstalls.json");
+    if (!import_fs.default.existsSync(jsonPath)) return null;
+    const raw = import_fs.default.readFileSync(jsonPath, "utf8");
+    const data = JSON.parse(raw);
+    const lolPath = data["league_of_legends.live"] || data["league_of_legends"] || "";
+    if (lolPath) {
+      const lock = import_path.default.join(import_path.default.dirname(lolPath), "lockfile");
+      if (import_fs.default.existsSync(lock)) {
+        const content = import_fs.default.readFileSync(lock, "utf8");
+        const [name, pid, port, password, protocol] = content.split(":");
+        return { protocol, address: "127.0.0.1", port: Number(port), username: "riot", password };
+      }
+    }
+    const rcPath = data["rc_default"] || data["rc_live"] || "";
+    if (rcPath) {
+      const dir = import_path.default.dirname(rcPath);
+      const lock = import_path.default.join(dir, "Config", "lockfile");
+      if (import_fs.default.existsSync(lock)) {
+        const content = import_fs.default.readFileSync(lock, "utf8");
+        const [name, pid, port, password, protocol] = content.split(":");
+        return { protocol, address: "127.0.0.1", port: Number(port), username: "riot", password };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function lcuRequest(auth, pathName, method = "GET", body) {
+  return new Promise((resolve, reject) => {
+    const opts = {
+      method,
+      rejectUnauthorized: false,
+      host: auth.address,
+      port: auth.port,
+      path: pathName,
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${auth.username}:${auth.password}`).toString("base64"),
+        "Content-Type": "application/json"
+      }
+    };
+    const req = import_https.default.request(opts, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => {
+        try {
+          resolve(data ? JSON.parse(data) : void 0);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.setTimeout(2e3, () => {
+      req.destroy(new Error("LCU request timeout"));
+    });
+    req.on("error", reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+async function getGameflowPhase(auth) {
+  return lcuRequest(auth, "/lol-gameflow/v1/gameflow-phase");
+}
+async function getLobbyMembers(auth) {
+  return lcuRequest(auth, "/lol-lobby/v2/lobby/members");
+}
+async function getLobby(auth) {
+  return lcuRequest(auth, "/lol-lobby/v2/lobby");
+}
+async function getGameSession(auth) {
+  return lcuRequest(auth, "/lol-gameflow/v1/session");
+}
+async function getCurrentSummoner(auth) {
+  return lcuRequest(auth, "/lol-summoner/v1/current-summoner");
+}
+
+// electron/main.ts
+var import_electron_updater = require("electron-updater");
+var mainWindow = null;
+var overlayWindow = null;
+var overlayScale = 1;
+var overlayCorner = "top-right";
 function createMainWindow() {
-    mainWindow = new electron_1.BrowserWindow({
-        width: 1100,
-        height: 720,
-        backgroundColor: '#0a0a0a',
-        frame: false,
-        titleBarStyle: 'hiddenInset',
-        webPreferences: {
-            preload: path_1.default.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-        },
-    });
-    const startUrl = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:3000'
-        : `file://${path_1.default.join(__dirname, '../renderer/index.html')}`;
-    mainWindow.loadURL(startUrl);
-    mainWindow.on('closed', () => {
-        mainWindow = null;
-    });
+  mainWindow = new import_electron.BrowserWindow({
+    width: 1100,
+    height: 720,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "hiddenInset",
+    webPreferences: {
+      preload: import_path2.default.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  const startUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000" : `file://${import_path2.default.join(process.resourcesPath || __dirname, "..", "out", "index.html")}`;
+  mainWindow.loadURL(startUrl);
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 }
 function createOverlayWindow() {
-    overlayWindow = new electron_1.BrowserWindow({
-        width: Math.round(260 * overlayScale),
-        height: Math.round(120 * overlayScale),
-        alwaysOnTop: true,
-        frame: false,
-        transparent: true,
-        resizable: true,
-        skipTaskbar: true,
-        backgroundColor: '#00000000',
-        webPreferences: {
-            preload: path_1.default.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-        },
-    });
-    const startUrl = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:3000/overlay'
-        : `file://${path_1.default.join(__dirname, '../renderer/overlay.html')}`;
-    overlayWindow.loadURL(startUrl);
-    overlayWindow.setAlwaysOnTop(true, 'floating');
-    overlayWindow.setVisibleOnAllWorkspaces(true);
-    const { width, height } = overlayWindow.getBounds();
-    positionOverlay(width, height);
+  overlayWindow = new import_electron.BrowserWindow({
+    width: Math.round(44 * overlayScale),
+    height: Math.round(44 * overlayScale),
+    alwaysOnTop: true,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    skipTaskbar: true,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: import_path2.default.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  const startUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000/overlay" : `file://${import_path2.default.join(process.resourcesPath || __dirname, "..", "out", "overlay", "index.html")}`;
+  overlayWindow.loadURL(startUrl);
+  overlayWindow.setAlwaysOnTop(true, "floating");
+  overlayWindow.setVisibleOnAllWorkspaces(true);
+  const { width, height } = overlayWindow.getBounds();
+  positionOverlay(width, height);
 }
 function positionOverlay(width, height) {
-    const { workArea } = require('electron').screen.getPrimaryDisplay();
-    const margin = 12;
-    let x = workArea.x + workArea.width - width - margin;
-    let y = workArea.y + margin;
-    if (overlayCorner === 'top-left') {
-        x = workArea.x + margin;
-        y = workArea.y + margin;
-    }
-    else if (overlayCorner === 'bottom-right') {
-        x = workArea.x + workArea.width - width - margin;
-        y = workArea.y + workArea.height - height - margin;
-    }
-    else if (overlayCorner === 'bottom-left') {
-        x = workArea.x + margin;
-        y = workArea.y + workArea.height - height - margin;
-    }
-    overlayWindow?.setBounds({ x, y, width, height });
+  const { workArea } = require("electron").screen.getPrimaryDisplay();
+  const margin = 12;
+  let x = workArea.x + workArea.width - width - margin;
+  let y = workArea.y + margin;
+  if (overlayCorner === "top-left") {
+    x = workArea.x + margin;
+    y = workArea.y + margin;
+  } else if (overlayCorner === "bottom-right") {
+    x = workArea.x + workArea.width - width - margin;
+    y = workArea.y + workArea.height - height - margin;
+  } else if (overlayCorner === "bottom-left") {
+    x = workArea.x + margin;
+    y = workArea.y + workArea.height - height - margin;
+  }
+  overlayWindow?.setBounds({ x, y, width, height });
 }
-electron_1.app.whenReady().then(() => {
+import_electron.app.whenReady().then(() => {
+  createMainWindow();
+  createOverlayWindow();
+  import_electron_updater.autoUpdater.autoDownload = false;
+  import_electron_updater.autoUpdater.on("update-available", (info) => {
+    mainWindow?.webContents.send("updates:available", info);
+  });
+  import_electron_updater.autoUpdater.on("update-not-available", (info) => {
+    mainWindow?.webContents.send("updates:none", info);
+  });
+  import_electron_updater.autoUpdater.on("download-progress", (p) => {
+    mainWindow?.webContents.send("updates:progress", p);
+  });
+  import_electron_updater.autoUpdater.on("update-downloaded", (info) => {
+    mainWindow?.webContents.send("updates:downloaded", info);
+  });
+  import_electron.globalShortcut.register("CommandOrControl+Shift+H", () => {
+    if (!overlayWindow) return;
+    const visible = overlayWindow.isVisible();
+    if (visible) overlayWindow.hide();
+    else overlayWindow.show();
+  });
+  import_electron.globalShortcut.register("CommandOrControl+Shift+M", () => {
+    import_electron.BrowserWindow.getAllWindows().forEach((win) => win.webContents.send("hotkey:toggle-mute"));
+  });
+  let pushToTalkKey = "CapsLock";
+  let isPushToTalkEnabled = false;
+  let isPushToTalkActive = false;
+  const updatePushToTalkHotkey = (enabled, key) => {
+    if (isPushToTalkEnabled && pushToTalkKey) {
+      try {
+        import_electron.globalShortcut.unregister(pushToTalkKey);
+      } catch (e) {
+        console.warn("Failed to unregister push-to-talk key:", e);
+      }
+    }
+    isPushToTalkEnabled = enabled;
+    pushToTalkKey = key;
+    if (enabled && key) {
+      try {
+        const success = import_electron.globalShortcut.register(key, () => {
+          if (!isPushToTalkActive) {
+            isPushToTalkActive = true;
+            import_electron.BrowserWindow.getAllWindows().forEach(
+              (win) => win.webContents.send("hotkey:push-to-talk", { active: true })
+            );
+          }
+        });
+        if (!success) {
+          console.warn(`Failed to register push-to-talk key: ${key}`);
+          import_electron.BrowserWindow.getAllWindows().forEach(
+            (win) => win.webContents.send("push-to-talk:error", { error: `Failed to register ${key}` })
+          );
+        }
+      } catch (e) {
+        console.warn("Error registering push-to-talk:", e);
+      }
+    }
+  };
+  let pushToTalkReleaseTimer = null;
+  const handlePushToTalkRelease = () => {
+    if (isPushToTalkActive) {
+      isPushToTalkActive = false;
+      import_electron.BrowserWindow.getAllWindows().forEach(
+        (win) => win.webContents.send("hotkey:push-to-talk", { active: false })
+      );
+    }
+  };
+  import_electron.ipcMain.handle("push-to-talk:update-settings", (event, { enabled, key }) => {
+    updatePushToTalkHotkey(enabled, key);
+    return { success: true };
+  });
+  import_electron.ipcMain.handle("push-to-talk:get-settings", () => {
+    return { enabled: isPushToTalkEnabled, key: pushToTalkKey };
+  });
+  import_electron.ipcMain.on("push-to-talk:simulate-release", () => {
+    handlePushToTalkRelease();
+  });
+  try {
+    import_electron_updater.autoUpdater.checkForUpdates();
+  } catch {
+  }
+  setInterval(async () => {
+    const auth = findLCUAuth();
+    if (!auth) {
+      console.log("[LCU] No auth found, checking League client processes...");
+      mainWindow?.webContents.send("lcu:update", { phase: "NotFound", members: [], lobby: null, session: null });
+      overlayWindow?.webContents.send("lcu:update", { phase: "NotFound", members: [], lobby: null, session: null });
+      return;
+    }
+    console.log("[LCU] Found auth:", { port: auth.port, protocol: auth.protocol });
+    try {
+      console.log("[LCU] Making API calls to League client...");
+      const [phase, membersRaw, lobby, session, self] = await Promise.all([
+        getGameflowPhase(auth).catch((e) => {
+          console.log("[LCU] getGameflowPhase error:", e.message);
+          return "Unknown";
+        }),
+        getLobbyMembers(auth).catch((e) => {
+          console.log("[LCU] getLobbyMembers error:", e.message);
+          return [];
+        }),
+        getLobby(auth).catch((e) => {
+          console.log("[LCU] getLobby error:", e.message);
+          return null;
+        }),
+        getGameSession(auth).catch((e) => {
+          console.log("[LCU] getGameSession error:", e.message);
+          return null;
+        }),
+        getCurrentSummoner(auth).catch((e) => {
+          console.log("[LCU] getCurrentSummoner error:", e.message);
+          return null;
+        })
+      ]);
+      const members = Array.isArray(membersRaw) ? membersRaw : [];
+      console.log("[LCU] API results:", { phase, membersCount: members.length, hasLobby: !!lobby, hasSession: !!session, hasSelf: !!self });
+      const payload = { phase, members, lobby, session, self };
+      console.log("[LCU] Sending to renderer:", JSON.stringify(payload).slice(0, 200) + "...");
+      mainWindow?.webContents.send("lcu:update", payload);
+      overlayWindow?.webContents.send("lcu:update", payload);
+      if (overlayWindow) {
+        if (phase === "InProgress") {
+          overlayWindow.showInactive();
+        } else {
+          overlayWindow.hide();
+        }
+      }
+    } catch (e) {
+      mainWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
+      overlayWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
+    }
+  }, 3e3);
+});
+import_electron.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    import_electron.app.quit();
+  }
+});
+import_electron.app.on("activate", () => {
+  if (import_electron.BrowserWindow.getAllWindows().length === 0) {
     createMainWindow();
-    createOverlayWindow();
-    // auto-updater
-    electron_updater_1.autoUpdater.autoDownload = false;
-    electron_updater_1.autoUpdater.on('update-available', (info) => {
-        mainWindow?.webContents.send('updates:available', info);
-    });
-    electron_updater_1.autoUpdater.on('update-not-available', (info) => {
-        mainWindow?.webContents.send('updates:none', info);
-    });
-    electron_updater_1.autoUpdater.on('download-progress', (p) => {
-        mainWindow?.webContents.send('updates:progress', p);
-    });
-    electron_updater_1.autoUpdater.on('update-downloaded', (info) => {
-        mainWindow?.webContents.send('updates:downloaded', info);
-    });
-    electron_1.globalShortcut.register('CommandOrControl+Shift+H', () => {
-        if (!overlayWindow)
-            return;
-        const visible = overlayWindow.isVisible();
-        if (visible)
-            overlayWindow.hide();
-        else
-            overlayWindow.show();
-    });
-    electron_1.globalShortcut.register('CommandOrControl+Shift+M', () => {
-        electron_1.BrowserWindow.getAllWindows().forEach(win => win.webContents.send('hotkey:toggle-mute'));
-    });
-    // check for updates silently on start
-    try {
-        electron_updater_1.autoUpdater.checkForUpdates();
-    }
-    catch { }
-    // basic poller for LCU state
-    setInterval(async () => {
-        const auth = (0, lcu_1.findLCUAuth)();
-        if (!auth) {
-            mainWindow?.webContents.send('lcu:update', { phase: 'NotFound', members: [], lobby: null, session: null });
-            overlayWindow?.webContents.send('lcu:update', { phase: 'NotFound', members: [], lobby: null, session: null });
-            return;
-        }
-        try {
-            const [phase, members, lobby, session, self] = await Promise.all([
-                (0, lcu_1.getGameflowPhase)(auth).catch(() => 'Unknown'),
-                (0, lcu_1.getLobbyMembers)(auth).catch(() => []),
-                (0, lcu_1.getLobby)(auth).catch(() => null),
-                (0, lcu_1.getGameSession)(auth).catch(() => null),
-                (0, lcu_1.getCurrentSummoner)(auth).catch(() => null),
-            ]);
-            mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
-            overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
-        }
-        catch (e) {
-            mainWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
-            overlayWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
-        }
-    }, 3000);
+  }
 });
-electron_1.app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        electron_1.app.quit();
-    }
+import_electron.ipcMain.handle("overlay:set-bounds", (_e, bounds) => {
+  if (!overlayWindow) return;
+  overlayWindow.setBounds(bounds);
 });
-electron_1.app.on('activate', () => {
-    if (electron_1.BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
-    }
+import_electron.ipcMain.handle("overlay:set-scale", (_e, scale) => {
+  overlayScale = Math.max(0.75, Math.min(1.5, Number(scale) || 1));
+  if (!overlayWindow) return;
+  const width = Math.round(44 * overlayScale);
+  const height = Math.round(44 * overlayScale);
+  positionOverlay(width, height);
 });
-electron_1.ipcMain.handle('overlay:set-bounds', (_e, bounds) => {
-    if (!overlayWindow)
-        return;
-    overlayWindow.setBounds(bounds);
+import_electron.ipcMain.handle("overlay:set-corner", (_e, corner) => {
+  overlayCorner = corner;
+  if (!overlayWindow) return;
+  const { width, height } = overlayWindow.getBounds();
+  positionOverlay(width, height);
 });
-electron_1.ipcMain.handle('overlay:set-scale', (_e, scale) => {
-    overlayScale = Math.max(0.75, Math.min(1.5, Number(scale) || 1));
-    if (!overlayWindow)
-        return;
-    const width = Math.round(260 * overlayScale);
-    const height = Math.round(120 * overlayScale);
-    positionOverlay(width, height);
+import_electron.ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
 });
-electron_1.ipcMain.handle('overlay:set-corner', (_e, corner) => {
-    overlayCorner = corner;
-    if (!overlayWindow)
-        return;
-    const { width, height } = overlayWindow.getBounds();
-    positionOverlay(width, height);
+import_electron.ipcMain.handle("window:close", () => {
+  mainWindow?.close();
 });
-// Window controls
-electron_1.ipcMain.handle('window:minimize', () => {
-    mainWindow?.minimize();
+import_electron.ipcMain.handle("window:is-maximized", () => {
+  return mainWindow?.isMaximized?.() || false;
 });
-electron_1.ipcMain.handle('window:close', () => {
-    mainWindow?.close();
+import_electron.ipcMain.handle("window:maximize-toggle", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
 });
-electron_1.ipcMain.handle('window:is-maximized', () => {
-    return mainWindow?.isMaximized?.() || false;
+import_electron.ipcMain.handle("updates:check", async () => {
+  try {
+    await import_electron_updater.autoUpdater.checkForUpdates();
+  } catch {
+  }
 });
-electron_1.ipcMain.handle('window:maximize-toggle', () => {
-    if (!mainWindow)
-        return;
-    if (mainWindow.isMaximized())
-        mainWindow.unmaximize();
-    else
-        mainWindow.maximize();
+import_electron.ipcMain.handle("updates:download", async () => {
+  try {
+    await import_electron_updater.autoUpdater.downloadUpdate();
+  } catch {
+  }
 });
-electron_1.ipcMain.handle('updates:check', async () => {
-    try {
-        await electron_updater_1.autoUpdater.checkForUpdates();
-    }
-    catch { }
-});
-electron_1.ipcMain.handle('updates:download', async () => {
-    try {
-        await electron_updater_1.autoUpdater.downloadUpdate();
-    }
-    catch { }
-});
-electron_1.ipcMain.handle('updates:quitAndInstall', () => {
-    electron_updater_1.autoUpdater.quitAndInstall();
+import_electron.ipcMain.handle("updates:quitAndInstall", () => {
+  import_electron_updater.autoUpdater.quitAndInstall();
 });

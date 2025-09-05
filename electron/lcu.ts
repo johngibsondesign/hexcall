@@ -20,11 +20,14 @@ function candidateLockfilePaths(): string[] {
 	candidates.add(path.join(programFilesX86, 'Riot Games', 'League of Legends', 'lockfile'));
 	candidates.add(path.join(systemDrive, 'Riot Games', 'League of Legends', 'lockfile'));
 
-	// Common extra drives
-	['C:', 'D:', 'E:', 'F:'].forEach((drive) => {
+	// Common extra drives and paths
+	['C:', 'D:', 'E:', 'F:', 'G:'].forEach((drive) => {
 		candidates.add(path.join(drive, 'Riot Games', 'League of Legends', 'lockfile'));
+		candidates.add(path.join(drive, 'Riot Games', 'League of Legends', 'Game', 'lockfile'));
 		candidates.add(path.join(drive, 'Program Files', 'Riot Games', 'League of Legends', 'lockfile'));
 		candidates.add(path.join(drive, 'Program Files (x86)', 'Riot Games', 'League of Legends', 'lockfile'));
+		candidates.add(path.join(drive, 'Games', 'Riot Games', 'League of Legends', 'lockfile'));
+		candidates.add(path.join(drive, 'Games', 'League of Legends', 'lockfile'));
 	});
 
 	// macOS common paths
@@ -44,28 +47,53 @@ async function tryValidateAuth(auth: LCUAuth): Promise<boolean> {
 }
 
 export function findLCUAuth(): LCUAuth | null {
+	console.log('[LCU] Starting League client detection...');
+	
 	// Prefer reading command line on Windows (most reliable)
 	if (process.platform === 'win32') {
+		console.log('[LCU] Trying Windows process detection methods...');
 		const fromCim = getAuthFromProcessWindowsCIM();
-		if (fromCim) return fromCim;
+		if (fromCim) {
+			console.log('[LCU] Found auth via CIM');
+			return fromCim;
+		}
 		const fromWmic = getAuthFromProcessWindowsWMIC();
-		if (fromWmic) return fromWmic;
+		if (fromWmic) {
+			console.log('[LCU] Found auth via WMIC');
+			return fromWmic;
+		}
 		const fromGetProcess = getAuthFromProcessWindowsGetProcess();
-		if (fromGetProcess) return fromGetProcess;
+		if (fromGetProcess) {
+			console.log('[LCU] Found auth via Get-Process');
+			return fromGetProcess;
+		}
 		const fromRiotJson = getAuthFromRiotClientInstalls();
-		if (fromRiotJson) return fromRiotJson;
+		if (fromRiotJson) {
+			console.log('[LCU] Found auth via Riot JSON');
+			return fromRiotJson;
+		}
 	}
 
 	// Fallback to well-known lockfile paths
+	console.log('[LCU] Trying lockfile detection...');
 	const paths = candidateLockfilePaths();
+	console.log('[LCU] Checking', paths.length, 'lockfile paths');
+	
 	for (const p of paths) {
 		try {
 			if (!fs.existsSync(p)) continue;
+			console.log('[LCU] Found lockfile at:', p);
 			const content = fs.readFileSync(p, 'utf8');
 			const [name, pid, port, password, protocol] = content.split(':');
-			return { protocol, address: '127.0.0.1', port: Number(port), username: 'riot', password };
-		} catch {}
+			const auth = { protocol, address: '127.0.0.1', port: Number(port), username: 'riot', password };
+			console.log('[LCU] Successfully parsed lockfile auth:', { port: auth.port });
+			return auth;
+		} catch (error) {
+			console.log('[LCU] Error reading lockfile', p, ':', error);
+		}
 	}
+	
+	console.log('[LCU] No League client found');
 	return null;
 }
 

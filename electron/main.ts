@@ -186,20 +186,30 @@ app.whenReady().then(() => {
 	setInterval(async () => {
 		const auth = findLCUAuth();
 		if (!auth) {
+			// Debug: Log what we're looking for
+			console.log('[LCU] No auth found, checking League client processes...');
 			mainWindow?.webContents.send('lcu:update', { phase: 'NotFound', members: [], lobby: null, session: null });
 			overlayWindow?.webContents.send('lcu:update', { phase: 'NotFound', members: [], lobby: null, session: null });
 			return;
 		}
+		console.log('[LCU] Found auth:', { port: auth.port, protocol: auth.protocol });
 		try {
-			const [phase, members, lobby, session, self] = await Promise.all([
-				getGameflowPhase(auth).catch(() => 'Unknown'),
-				getLobbyMembers(auth).catch(() => []),
-				getLobby(auth).catch(() => null),
-				getGameSession(auth).catch(() => null),
-				getCurrentSummoner(auth).catch(() => null),
+			console.log('[LCU] Making API calls to League client...');
+			const [phase, membersRaw, lobby, session, self] = await Promise.all([
+				getGameflowPhase(auth).catch((e) => { console.log('[LCU] getGameflowPhase error:', e.message); return 'Unknown'; }),
+				getLobbyMembers(auth).catch((e) => { console.log('[LCU] getLobbyMembers error:', e.message); return []; }),
+				getLobby(auth).catch((e) => { console.log('[LCU] getLobby error:', e.message); return null; }),
+				getGameSession(auth).catch((e) => { console.log('[LCU] getGameSession error:', e.message); return null; }),
+				getCurrentSummoner(auth).catch((e) => { console.log('[LCU] getCurrentSummoner error:', e.message); return null; }),
 			]);
-			mainWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
-			overlayWindow?.webContents.send('lcu:update', { phase, members, lobby, session, self });
+			
+			// Ensure members is always an array
+			const members = Array.isArray(membersRaw) ? membersRaw : [];
+			console.log('[LCU] API results:', { phase, membersCount: members.length, hasLobby: !!lobby, hasSession: !!session, hasSelf: !!self });
+			const payload = { phase, members, lobby, session, self };
+			console.log('[LCU] Sending to renderer:', JSON.stringify(payload).slice(0, 200) + '...');
+			mainWindow?.webContents.send('lcu:update', payload);
+			overlayWindow?.webContents.send('lcu:update', payload);
 			// Only show overlay when game is in progress
 			if (overlayWindow) {
 				if (phase === 'InProgress') {
