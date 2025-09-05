@@ -30,11 +30,21 @@ function createMainWindow() {
 	} else {
 		// In production, load from the app's resources
 		const indexPath = path.join(__dirname, '..', 'out', 'index.html');
+		console.log('[MAIN] Loading main window from:', indexPath);
 		mainWindow.loadFile(indexPath);
 	}
 
 	mainWindow.on('closed', () => {
 		mainWindow = null;
+	});
+
+	// Add debug logging for any loading issues
+	mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+		console.error('[MAIN] Failed to load:', { errorCode, errorDescription, validatedURL });
+	});
+
+	mainWindow.webContents.on('did-finish-load', () => {
+		console.log('[MAIN] Main window finished loading');
 	});
 }
 
@@ -61,14 +71,24 @@ function createOverlayWindow() {
 	if (isDev) {
 		overlayWindow.loadURL('http://localhost:3000/overlay');
 	} else {
-		// In production, load from the app's resources
-		const overlayPath = path.join(__dirname, '..', 'out', 'overlay.html');
+		// In production, load from the app's resources - Next.js now generates overlay/index.html
+		const overlayPath = path.join(__dirname, '..', 'out', 'overlay', 'index.html');
+		console.log('[OVERLAY] Loading overlay window from:', overlayPath);
 		overlayWindow.loadFile(overlayPath);
 	}
 	overlayWindow.setAlwaysOnTop(true, 'floating');
 	overlayWindow.setVisibleOnAllWorkspaces(true);
 	const { width, height } = overlayWindow.getBounds();
 	positionOverlay(width, height);
+
+	// Add debug logging for overlay loading issues
+	overlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+		console.error('[OVERLAY] Failed to load:', { errorCode, errorDescription, validatedURL });
+	});
+
+	overlayWindow.webContents.on('did-finish-load', () => {
+		console.log('[OVERLAY] Overlay window finished loading');
+	});
 }
 
 function positionOverlay(width: number, height: number) {
