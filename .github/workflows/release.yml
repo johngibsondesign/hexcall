@@ -3,83 +3,54 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
-
-jobs:
-  build-and-publish:
-    runs-on: windows-latest
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      NEXT_PUBLIC_METERED_TURN_URL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_URL }}
-      NEXT_PUBLIC_METERED_TURN_USERNAME: ${{ secrets.NEXT_PUBLIC_METERED_TURN_USERNAME }}
-      NEXT_PUBLIC_METERED_TURN_CREDENTIAL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_CREDENTIAL }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      NODE_OPTIONS: --max_old_space_size=4096
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build app (Next export + Electron main)
-        run: npm run build
-
-      - name: Package and publish with electron-builder
-        run: npx electron-builder -w --publish always
-
-      - name: Upload build artifacts (for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist_electron
-          path: dist_electron/**
-
-name: Release
-on:
-  push:
-    tags:
       - "v*"
   workflow_dispatch: {}
-  create:
-    tags:
-      - "v*"
+
 jobs:
   build-windows:
     runs-on: windows-latest
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ github.token }}
+      NODE_OPTIONS: --max_old_space_size=4096
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+
       - name: Install
-        run: npm install
+        run: npm ci
+
       - name: Create .env from secrets
+        shell: bash
         run: |
-          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          echo "METERED_TURN_URL=${{ secrets.METERED_TURN_URL }}" >> .env
-          echo "METERED_TURN_USERNAME=${{ secrets.METERED_TURN_USERNAME }}" >> .env
-          echo "METERED_TURN_CREDENTIAL=${{ secrets.METERED_TURN_CREDENTIAL }}" >> .env
-      - name: Build renderer
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" >> .env
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
+          echo "NEXT_PUBLIC_METERED_TURN_URL=${{ secrets.NEXT_PUBLIC_METERED_TURN_URL }}" >> .env
+          echo "NEXT_PUBLIC_METERED_TURN_USERNAME=${{ secrets.NEXT_PUBLIC_METERED_TURN_USERNAME }}" >> .env
+          echo "NEXT_PUBLIC_METERED_TURN_CREDENTIAL=${{ secrets.NEXT_PUBLIC_METERED_TURN_CREDENTIAL }}" >> .env
+
+      - name: Build renderer and main
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_METERED_TURN_URL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_URL }}
+          NEXT_PUBLIC_METERED_TURN_USERNAME: ${{ secrets.NEXT_PUBLIC_METERED_TURN_USERNAME }}
+          NEXT_PUBLIC_METERED_TURN_CREDENTIAL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_CREDENTIAL }}
+
       - name: Package app (no publish)
         run: npx electron-builder -w -p never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
@@ -89,6 +60,4 @@ jobs:
           files: |
             dist_electron/*.exe
             dist_electron/*.yml
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
