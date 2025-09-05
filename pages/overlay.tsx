@@ -37,13 +37,13 @@ type Teammate = {
 export default function Overlay() {
 	const [teammates, setTeammates] = useState<Teammate[]>([]);
 	const [overlayVisible, setOverlayVisible] = useState(true);
-	
-	// Only show overlay when connected with other participants
-	const shouldShowOverlay = connected && connectedPeers && connectedPeers.length > 0;
 	const [currentTheme, setCurrentTheme] = useState('default');
 	const containerRef = useRef<HTMLDivElement>(null);
     const champKeyToNameRef = useRef<Record<string, string>>({});
     const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers } = useVoice();
+    
+	// Only show overlay when connected with other participants
+	const shouldShowOverlay = connected && connectedPeers && connectedPeers.length > 0;
     const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
     
     const theme = getOverlayTheme(currentTheme);
