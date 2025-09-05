@@ -1,4 +1,48 @@
 name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_METERED_TURN_URL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_URL }}
+      NEXT_PUBLIC_METERED_TURN_USERNAME: ${{ secrets.NEXT_PUBLIC_METERED_TURN_USERNAME }}
+      NEXT_PUBLIC_METERED_TURN_CREDENTIAL: ${{ secrets.NEXT_PUBLIC_METERED_TURN_CREDENTIAL }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NODE_OPTIONS: --max_old_space_size=4096
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app (Next export + Electron main)
+        run: npm run build
+
+      - name: Package and publish with electron-builder
+        run: npx electron-builder -w --publish always
+
+      - name: Upload build artifacts (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist_electron
+          path: dist_electron/**
+
+name: Release
 on:
   push:
     tags:
