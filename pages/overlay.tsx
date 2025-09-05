@@ -35,10 +35,13 @@ type Teammate = {
 export default function Overlay() {
 	const [teammates, setTeammates] = useState<Teammate[]>([]);
 	const [overlayVisible, setOverlayVisible] = useState(true);
+	
+	// Only show overlay when connected with other participants
+	const shouldShowOverlay = connected && connectedPeers && connectedPeers.length > 0;
 	const [currentTheme, setCurrentTheme] = useState('default');
 	const containerRef = useRef<HTMLDivElement>(null);
     const champKeyToNameRef = useRef<Record<string, string>>({});
-    const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume } = useVoice();
+    const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers } = useVoice();
     const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
     
     const theme = getOverlayTheme(currentTheme);
@@ -194,6 +197,11 @@ export default function Overlay() {
 				<FaEye className="w-4 h-4 text-neutral-400" />
 			</div>
 		);
+	}
+
+	// Don't render overlay if not in active call with others
+	if (!shouldShowOverlay) {
+		return null;
 	}
 
 	return (
