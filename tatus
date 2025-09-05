@@ -1,0 +1,3 @@
+[33m6f6d53b[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;33mtag: [m[1;33mv1.0.24[m[33m, [m[1;31morigin/main[m[33m)[m ci: fix duplicate keys; inject NEXT_PUBLIC_* secrets; build and release
+[33m83c5b29[m[33m ([m[1;33mtag: [m[1;33mv1.0.23[m[33m)[m chore: bump version to 1.0.23
+[33mbdf0445[m ci: add release workflow with env injection

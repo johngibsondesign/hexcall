@@ -46,7 +46,8 @@ export default function Home() {
 		createManualCall, 
 		setUserVolume, 
 		getUserVolume, 
-		connectionStats 
+		connectionStats,
+		connectedPeers
 	} = useVoice();
 	const [gameState, setGameState] = useState<string>('Waiting for League...');
 	const [teammates, setTeammates] = useState<Teammate[]>([]);
@@ -72,8 +73,7 @@ export default function Home() {
 
 	useEffect(() => {
 		const off = window.hexcall?.onLcuUpdate?.((payload: {
-			gamePhase?: string;
-			gameState?: string;
+			phase?: string;
 			members?: Teammate[];
 			session?: {
 				gameData?: {
@@ -86,7 +86,7 @@ export default function Home() {
 				};
 			};
 		}) => {
-			const phase = payload?.gamePhase || 'Unknown';
+			const phase = payload?.phase || 'Unknown';
 			setGamePhase(phase);
 			
 			// Set user-friendly game state
@@ -236,54 +236,29 @@ export default function Home() {
 							<div className="max-w-4xl mx-auto">
 								<h3 className="text-sm font-medium text-neutral-300 mb-4 flex items-center gap-2">
 									<FaUsers />
-									Team ({teammates.length}/5)
+									Voice Chat ({(connectedPeers || []).length}/5)
 								</h3>
 								<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-									{teammates.map((teammate, idx) => {
-										const isSpeaking = speakingUsers?.has(teammate.puuid || '') || speakingUsers?.has(teammate.name || '');
-										const role = teammate.assignedPosition || teammate.role || 'unknown';
-										const roleDisplay = role === 'bottom' ? 'ADC' : role.toUpperCase();
-										const roleColors = {
-											'TOP': 'bg-blue-500',
-											'JUNGLE': 'bg-green-500', 
-											'MID': 'bg-yellow-500',
-											'ADC': 'bg-red-500',
-											'BOTTOM': 'bg-red-500',
-											'SUPPORT': 'bg-purple-500'
-										};
-										
+									{(connectedPeers || []).map((peer, idx) => {
+										const isSpeaking = speakingUsers?.has(peer.id);
+										// For voice peers, we don't have role info, so show generic
 										return (
-											<div key={teammate.puuid || idx} className="glass rounded-xl p-4 text-center relative">
-												{/* Role Badge */}
-												{role !== 'unknown' && (
-													<div className={`absolute -top-2 -right-2 ${roleColors[roleDisplay as keyof typeof roleColors] || 'bg-neutral-500'} text-white text-xs px-2 py-1 rounded-full font-bold shadow-lg`}>
-														{roleDisplay}
-													</div>
-												)}
-												
+											<div key={peer.id} className="glass rounded-xl p-4 text-center relative">
 												<div className={`w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden flex items-center justify-center ring-2 transition-all ${
 													isSpeaking 
 														? 'ring-green-400 shadow-lg shadow-green-400/25 animate-pulse' 
 														: 'ring-white/20'
-												}`}>
-													<ChampionIconWithPreview
-														championName={teammate.championName}
-														championId={teammate.championId}
-														profileIconId={teammate.profileIconId}
-														alt={teammate.summonerName || teammate.gameName || 'Player'}
-														role={role}
-														className="w-full h-full object-cover"
-														showPreview={true}
-													/>
+												} bg-neutral-700`}>
+													<FaUsers className="w-8 h-8 text-neutral-400" />
 												</div>
-												<div className="text-sm font-medium text-white truncate">{teammate.summonerName || teammate.gameName || 'Player'}</div>
-												<div className="text-xs text-neutral-400 capitalize">{role === 'bottom' ? 'ADC' : role}</div>
+												<div className="text-sm font-medium text-white truncate">{peer.name || peer.id.slice(0, 8)}</div>
+												<div className="text-xs text-neutral-400">Connected</div>
 												
 												{/* Volume Control */}
 												<div className="mt-3 w-full">
 													<VolumeSlider
-														userId={teammate.puuid || teammate.summonerName || teammate.gameName || `player-${idx}`}
-														initialVolume={getUserVolume?.(teammate.puuid || teammate.summonerName || teammate.gameName || `player-${idx}`) ?? 1.0}
+														userId={peer.id}
+														initialVolume={getUserVolume?.(peer.id) ?? 1.0}
 														onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
 														size="sm"
 													/>

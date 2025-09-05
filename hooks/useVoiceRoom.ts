@@ -45,7 +45,8 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 		signaling.presence((peers) => {
 			const ids = peers.map(p => p.id);
 			setPeerIds(ids);
-			setCanJoin(ids.length >= 2);
+			// Allow joining even if alone; mesh forms when others join
+			setCanJoin(true);
 			
 			// Update speaking users based on presence metadata
 			const newSpeakingUsers = new Set<string>();

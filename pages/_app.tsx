@@ -17,7 +17,7 @@ interface AppContentProps {
 
 function AppContent({ Component, pageProps, router }: AppContentProps) {
 	const isOverlay = router?.pathname === '/overlay';
-	const { toasts, removeToast } = useToast();
+	const { toasts, removeToast, showInfo, showSuccess } = useToast();
 	
 	// Apply transparent background for overlay
 	useEffect(() => {
@@ -36,6 +36,30 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 		};
 	}, [isOverlay]);
 	
+	// Subscribe to updater events
+	useEffect(() => {
+		const offNone = window.hexcall?.onUpdateNone?.(() => {
+			showInfo('No updates found');
+		});
+		const offAvailable = window.hexcall?.onUpdateAvailable?.((info: any) => {
+			const v = info?.version ? `v${info.version}` : '';
+			showInfo('Update available', v);
+		});
+		const offProgress = window.hexcall?.onUpdateProgress?.((p: any) => {
+			const pct = Math.round(p?.percent || 0);
+			showInfo('Downloading update…', `${pct}%`, 1200);
+		});
+		const offDownloaded = window.hexcall?.onUpdateDownloaded?.(() => {
+			showSuccess('Update ready', 'Restart to install');
+		});
+		return () => {
+			offNone && offNone();
+			offAvailable && offAvailable();
+			offProgress && offProgress();
+			offDownloaded && offDownloaded();
+		};
+	}, [showInfo, showSuccess]);
+
 	return (
 		<>
 			<div className={isOverlay ? "" : "min-h-screen"}>
@@ -44,7 +68,7 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 					<div className="h-8 flex items-center justify-between px-3 select-none bg-neutral-950/80 border-b border-white/10" style={drag}>
 						<div className="text-xs text-neutral-400">Hexcall</div>
 						<div className="flex gap-1.5" style={noDrag}>
-							<button onClick={() => window.hexcall?.updatesCheck?.()} className="h-6 px-2 rounded chip hover:bg-white/10 text-xs">Check updates</button>
+							<button onClick={() => { showInfo('Checking for updates…'); window.hexcall?.updatesCheck?.(); }} className="h-6 px-2 rounded chip hover:bg-white/10 text-xs">Check updates</button>
 							<button onClick={() => window.hexcall?.windowMinimize?.()} className="w-8 h-6 rounded chip hover:bg-white/10" aria-label="Minimize">—</button>
 							<button onClick={() => window.hexcall?.windowMaximizeToggle?.()} className="w-8 h-6 rounded chip hover:bg-white/10" aria-label="Maximize">▢</button>
 							<button onClick={() => window.hexcall?.windowClose?.()} className="w-8 h-6 rounded chip hover:bg-red-500/20" aria-label="Close">✕</button>

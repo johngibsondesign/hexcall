@@ -19,6 +19,7 @@ type VoiceContextValue = {
   connectionStats?: import('../modules/webrtc/voiceClient').ConnectionStats | null;
   joinByCode?: (code: string) => Promise<void> | void;
   createManualCall?: () => Promise<string> | string;
+  connectedPeers?: Array<{id: string, name?: string}>;
 };
 
 const VoiceContext = createContext<VoiceContextValue>({ muted: false, setMuted: () => {} });
@@ -92,7 +93,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setUserCode(getUserCode());
   }, []);
 
-  const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
+  const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, peerIds } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
@@ -100,21 +101,23 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       if (isManualCall) return;
       
       const phase = payload?.phase;
+      const members: any[] = Array.isArray(payload?.members) ? payload.members : [];
       const newRoom = deriveRoomId(payload);
-      if (!newRoom) return;
-      // join when in lobby or in progress with teammates
-      if (['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'].includes(phase)) {
+
+      const allowedPhases = ['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'];
+
+      // Only auto-set room when we actually have a party (>=2)
+      if (newRoom && allowedPhases.includes(phase) && members.length >= 2) {
+        if (newRoom !== roomId) {
         setRoomId(newRoom);
         setIsManualCall(false);
       }
-      // Leave at EndOfGame unless the room was created in lobby and still same party
-      if (phase === 'EndOfGame') {
-        // if we had a lobby-derived room, keep; otherwise leave
-        if (!payload?.lobby?.lobbyId && !payload?.lobby?.partyId) {
+      } else {
+        // Outside allowed phases or solo -> leave any auto room
+        if (roomId && !isManualCall) {
           leave();
           setMuted(false);
           setRoomId(undefined);
-          setIsManualCall(false);
         }
       }
     });
@@ -133,9 +136,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
-    if (auto && roomId && !connected && !isManualCall) {
-      // allow joining alone (will form mesh when others arrive)
-      join(true);
+    if (auto && roomId && !connected) {
+      // For auto rooms, join only if not manual and phase-derived party exists (handled by setter)
+      if (!isManualCall) join(true);
     }
   }, [roomId, connected, join, isManualCall]);
 
@@ -162,6 +165,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setRoomId(undefined);
   };
 
+  const connectedPeers = useMemo(() => {
+    return (peerIds || []).filter(id => id !== userId).map(id => ({ id, name: id.includes('local-') ? 'User' : id.slice(0, 8) }));
+  }, [peerIds, userId]);
+
   const value = useMemo(
     () => ({ 
       muted, 
@@ -180,9 +187,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       getUserVolumes,
       setPushToTalkEnabled,
       setPushToTalkActive,
-      connectionStats
+      connectionStats,
+      connectedPeers
     }),
-    [muted, roomId, connected, join, leave, speakingUsers, isSelfSpeaking, userCode, isManualCall, manualLeave, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats]
+    [muted, roomId, connected, join, leave, speakingUsers, isSelfSpeaking, userCode, isManualCall, manualLeave, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, connectedPeers]
   );
 
   useEffect(() => {

@@ -23,6 +23,7 @@ export type VoiceClientOptions = {
 
 export class VoiceClient {
 	private pc: RTCPeerConnection | null = null;
+	private peerConnections: Map<string, RTCPeerConnection> = new Map();
 	private stream: MediaStream | null = null;
 	private signaling: SupabaseSignaling;
 	private remoteAudioEls: Map<string, HTMLAudioElement> = new Map();
@@ -183,9 +184,10 @@ export class VoiceClient {
 			clearInterval(this.statsInterval);
 		}
 
+		// Reduce sampling frequency to ease CPU usage
 		this.statsInterval = setInterval(async () => {
 			await this.collectConnectionStats();
-		}, 1000); // Collect stats every second
+		}, 2000);
 	}
 
 	/**
@@ -709,26 +711,40 @@ export class VoiceClient {
 	}
 
 	private onSignal = async (msg: SignalMessage) => {
-		if (!this.pc) return;
-		switch (msg.type) {
-			case 'offer': {
-				if (msg.from === this.opts.userId) return;
-				await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-				const answer = await this.pc.createAnswer();
-				await this.pc.setLocalDescription(answer);
-				await this.signaling.send({ type: 'answer', from: this.opts.userId, to: msg.from, sdp: answer });
-				break;
-			}
-			case 'answer': {
-				await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-				break;
-			}
-			case 'ice': {
-				try {
+		if (!this.pc || this.isDestroyed) return;
+		
+		// Ignore messages from self
+		if (msg.from === this.opts.userId) return;
+		
+		console.log(`[VoiceClient] Received ${msg.type} from ${msg.from}`);
+		
+		try {
+			switch (msg.type) {
+				case 'offer': {
+					await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+					const answer = await this.pc.createAnswer();
+					await this.pc.setLocalDescription(answer);
+					await this.signaling.send({ type: 'answer', from: this.opts.userId, to: msg.from, sdp: answer });
+					console.log(`[VoiceClient] Sent answer to ${msg.from}`);
+					break;
+				}
+				case 'answer': {
+					// Only process answers meant for us
+					if (msg.to !== this.opts.userId) return;
+					await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+					console.log(`[VoiceClient] Processed answer from ${msg.from}`);
+					break;
+				}
+				case 'ice': {
+					// Only process ICE candidates meant for us or broadcast to all
+					if (msg.to !== this.opts.userId && msg.to !== '*') return;
 					await this.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-				} catch {}
-				break;
+					console.log(`[VoiceClient] Added ICE candidate from ${msg.from}`);
+					break;
+				}
 			}
+		} catch (error) {
+			console.error(`[VoiceClient] Error processing ${msg.type} from ${msg.from}:`, error);
 		}
 	};
 
