@@ -256,8 +256,13 @@ function createMainWindow() {
       nodeIntegration: false
     }
   });
-  const startUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000" : `file://${import_path2.default.join(process.resourcesPath || __dirname, "..", "out", "index.html")}`;
-  mainWindow.loadURL(startUrl);
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
+    mainWindow.loadURL("http://localhost:3000");
+  } else {
+    const indexPath = import_path2.default.join(__dirname, "..", "out", "index.html");
+    mainWindow.loadFile(indexPath);
+  }
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -278,8 +283,13 @@ function createOverlayWindow() {
       nodeIntegration: false
     }
   });
-  const startUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000/overlay" : `file://${import_path2.default.join(process.resourcesPath || __dirname, "..", "out", "overlay", "index.html")}`;
-  overlayWindow.loadURL(startUrl);
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
+    overlayWindow.loadURL("http://localhost:3000/overlay");
+  } else {
+    const overlayPath = import_path2.default.join(__dirname, "..", "out", "overlay.html");
+    overlayWindow.loadFile(overlayPath);
+  }
   overlayWindow.setAlwaysOnTop(true, "floating");
   overlayWindow.setVisibleOnAllWorkspaces(true);
   const { width, height } = overlayWindow.getBounds();

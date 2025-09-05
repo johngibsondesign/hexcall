@@ -22,11 +22,15 @@ function createMainWindow() {
 		},
 	});
 
-	const startUrl = process.env.NODE_ENV === 'development'
-		? 'http://localhost:3000'
-		: `file://${path.join(process.resourcesPath || __dirname, '..', 'out', 'index.html')}`;
-
-	mainWindow.loadURL(startUrl);
+	const isDev = process.env.NODE_ENV === 'development';
+	
+	if (isDev) {
+		mainWindow.loadURL('http://localhost:3000');
+	} else {
+		// In production, load from the app's resources
+		const indexPath = path.join(__dirname, '..', 'out', 'index.html');
+		mainWindow.loadFile(indexPath);
+	}
 
 	mainWindow.on('closed', () => {
 		mainWindow = null;
@@ -50,11 +54,15 @@ function createOverlayWindow() {
 		},
 	});
 
-	const startUrl = process.env.NODE_ENV === 'development'
-		? 'http://localhost:3000/overlay'
-		: `file://${path.join(process.resourcesPath || __dirname, '..', 'out', 'overlay', 'index.html')}`;
-
-	overlayWindow.loadURL(startUrl);
+	const isDev = process.env.NODE_ENV === 'development';
+	
+	if (isDev) {
+		overlayWindow.loadURL('http://localhost:3000/overlay');
+	} else {
+		// In production, load from the app's resources
+		const overlayPath = path.join(__dirname, '..', 'out', 'overlay.html');
+		overlayWindow.loadFile(overlayPath);
+	}
 	overlayWindow.setAlwaysOnTop(true, 'floating');
 	overlayWindow.setVisibleOnAllWorkspaces(true);
 	const { width, height } = overlayWindow.getBounds();
