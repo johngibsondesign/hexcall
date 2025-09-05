@@ -12,6 +12,14 @@ contextBridge.exposeInMainWorld('hexcall', {
 		ipcRenderer.on('hotkey:toggle-mute', listener);
 		return () => ipcRenderer.removeListener('hotkey:toggle-mute', listener);
 	},
+	onHotkeyPushToTalk: (cb: (active: boolean) => void) => {
+		const listener = (_e: any, data: { active: boolean }) => cb(data.active);
+		ipcRenderer.on('hotkey:push-to-talk', listener);
+		return () => ipcRenderer.removeListener('hotkey:push-to-talk', listener);
+	},
+	pushToTalkUpdateSettings: (enabled: boolean, key: string) => ipcRenderer.invoke('push-to-talk:update-settings', { enabled, key }),
+	pushToTalkGetSettings: () => ipcRenderer.invoke('push-to-talk:get-settings'),
+	pushToTalkSimulateRelease: () => ipcRenderer.send('push-to-talk:simulate-release'),
 	setOverlayScale: (scale: number) => ipcRenderer.invoke('overlay:set-scale', scale),
 	setOverlayCorner: (corner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => ipcRenderer.invoke('overlay:set-corner', corner),
 	windowMinimize: () => ipcRenderer.invoke('window:minimize'),

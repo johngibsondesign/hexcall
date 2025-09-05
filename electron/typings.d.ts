@@ -6,6 +6,10 @@ declare global {
 			setOverlayBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 			onLcuUpdate?: (cb: (payload: any) => void) => () => void;
 			onHotkeyToggleMute?: (cb: () => void) => () => void;
+			onHotkeyPushToTalk?: (cb: (active: boolean) => void) => () => void;
+			pushToTalkUpdateSettings?: (enabled: boolean, key: string) => Promise<{ success: boolean }>;
+			pushToTalkGetSettings?: () => Promise<{ enabled: boolean; key: string }>;
+			pushToTalkSimulateRelease?: () => void;
 			setOverlayScale?: (scale: number) => void;
 			setOverlayCorner?: (corner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => void;
 			windowMinimize?: () => void;

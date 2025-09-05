@@ -108,6 +108,77 @@ app.whenReady().then(() => {
 		BrowserWindow.getAllWindows().forEach(win => win.webContents.send('hotkey:toggle-mute'));
 	});
 
+	// Push-to-talk functionality
+	let pushToTalkKey = 'CapsLock';
+	let isPushToTalkEnabled = false;
+	let isPushToTalkActive = false;
+
+	// Register/unregister push-to-talk based on settings
+	const updatePushToTalkHotkey = (enabled: boolean, key: string) => {
+		// Unregister old hotkey
+		if (isPushToTalkEnabled && pushToTalkKey) {
+			try {
+				globalShortcut.unregister(pushToTalkKey);
+			} catch (e) {
+				console.warn('Failed to unregister push-to-talk key:', e);
+			}
+		}
+
+		isPushToTalkEnabled = enabled;
+		pushToTalkKey = key;
+
+		if (enabled && key) {
+			try {
+				// Register keydown event
+				const success = globalShortcut.register(key, () => {
+					if (!isPushToTalkActive) {
+						isPushToTalkActive = true;
+						BrowserWindow.getAllWindows().forEach(win => 
+							win.webContents.send('hotkey:push-to-talk', { active: true })
+						);
+					}
+				});
+
+				if (!success) {
+					console.warn(`Failed to register push-to-talk key: ${key}`);
+					BrowserWindow.getAllWindows().forEach(win => 
+						win.webContents.send('push-to-talk:error', { error: `Failed to register ${key}` })
+					);
+				}
+			} catch (e) {
+				console.warn('Error registering push-to-talk:', e);
+			}
+		}
+	};
+
+	// Handle key release (this is a limitation - Electron doesn't support keyup events for global shortcuts)
+	// We'll implement a workaround using a timer
+	let pushToTalkReleaseTimer: NodeJS.Timeout | null = null;
+	
+	const handlePushToTalkRelease = () => {
+		if (isPushToTalkActive) {
+			isPushToTalkActive = false;
+			BrowserWindow.getAllWindows().forEach(win => 
+				win.webContents.send('hotkey:push-to-talk', { active: false })
+			);
+		}
+	};
+
+	// IPC handlers for push-to-talk settings
+	ipcMain.handle('push-to-talk:update-settings', (event, { enabled, key }) => {
+		updatePushToTalkHotkey(enabled, key);
+		return { success: true };
+	});
+
+	ipcMain.handle('push-to-talk:get-settings', () => {
+		return { enabled: isPushToTalkEnabled, key: pushToTalkKey };
+	});
+
+	// Simulate key release detection (workaround for Electron limitation)
+	ipcMain.on('push-to-talk:simulate-release', () => {
+		handlePushToTalkRelease();
+	});
+
 	// check for updates silently on start
 	try { autoUpdater.checkForUpdates(); } catch {}
 

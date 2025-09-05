@@ -1,4 +1,4 @@
-export function RoleIcon({ role }: { role?: string }) {
+export function RoleIcon({ role, className }: { role?: string; className?: string }) {
 	const r = (role || '').toLowerCase();
 	const map: Record<string, string> = {
 		top: '🛡️',
@@ -9,5 +9,5 @@ export function RoleIcon({ role }: { role?: string }) {
 		support: '✨',
 	};
 	const glyph = map[r] || '🎧';
-	return <span aria-label={r || 'unknown'} title={r || 'unknown'}>{glyph}</span>;
+	return <span className={className} aria-label={r || 'unknown'} title={r || 'unknown'}>{glyph}</span>;
 }

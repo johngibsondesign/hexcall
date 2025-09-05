@@ -8,6 +8,17 @@ type VoiceContextValue = {
   connected?: boolean;
   joinCall?: (forceAlone?: boolean) => Promise<void> | void;
   leaveCall?: () => Promise<void> | void;
+  speakingUsers?: Set<string>;
+  isSelfSpeaking?: boolean;
+  userCode?: string;
+  setUserVolume?: (userId: string, volume: number) => void;
+  getUserVolume?: (userId: string) => number;
+  getUserVolumes?: () => Record<string, number>;
+  setPushToTalkEnabled?: (enabled: boolean) => void;
+  setPushToTalkActive?: (active: boolean) => void;
+  connectionStats?: import('../modules/webrtc/voiceClient').ConnectionStats | null;
+  joinByCode?: (code: string) => Promise<void> | void;
+  createManualCall?: () => Promise<string> | string;
 };
 
 const VoiceContext = createContext<VoiceContextValue>({ muted: false, setMuted: () => {} });
@@ -24,6 +35,31 @@ function getStableUserId(): string {
     return id;
   } catch {
     return 'user';
+  }
+}
+
+function generateUserCode(): string {
+  // Generate a 6-character alphanumeric code
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+function getUserCode(): string {
+  if (typeof window === 'undefined') return 'DEMO01';
+  try {
+    const key = 'hexcall-user-code';
+    let code = localStorage.getItem(key);
+    if (!code) {
+      code = generateUserCode();
+      localStorage.setItem(key, code);
+    }
+    return code;
+  } catch {
+    return 'DEMO01';
   }
 }
 
@@ -47,18 +83,29 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [roomId, setRoomId] = useState<string | undefined>(undefined);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
+  const [isManualCall, setIsManualCall] = useState(false);
   const userId = useMemo(() => 'local-' + getStableUserId(), []);
+  const [userCode, setUserCode] = useState<string>('DEMO01');
 
-  const { connected, join, leave, mute } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
+  useEffect(() => {
+    // Only set the real user code on the client side to avoid hydration mismatch
+    setUserCode(getUserCode());
+  }, []);
+
+  const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
+      // Don't auto-join League calls if we're in a manual call
+      if (isManualCall) return;
+      
       const phase = payload?.phase;
       const newRoom = deriveRoomId(payload);
       if (!newRoom) return;
       // join when in lobby or in progress with teammates
       if (['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'].includes(phase)) {
         setRoomId(newRoom);
+        setIsManualCall(false);
       }
       // Leave at EndOfGame unless the room was created in lobby and still same party
       if (phase === 'EndOfGame') {
@@ -67,6 +114,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           leave();
           setMuted(false);
           setRoomId(undefined);
+          setIsManualCall(false);
         }
       }
     });
@@ -77,7 +125,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       offUpdate && offUpdate();
       offHotkey && offHotkey();
     };
-  }, []);
+  }, [isManualCall, leave]);
 
   useEffect(() => {
     mute(muted);
@@ -85,23 +133,75 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
-    if (auto && roomId && !connected) {
+    if (auto && roomId && !connected && !isManualCall) {
       // allow joining alone (will form mesh when others arrive)
       join(true);
     }
-  }, [roomId, connected, join]);
+  }, [roomId, connected, join, isManualCall]);
+
+  // Manual call functions
+  const createManualCall = async (): Promise<string> => {
+    const callRoom = `manual-${userCode}`;
+    setRoomId(callRoom);
+    setIsManualCall(true);
+    return userCode;
+  };
+
+  const joinByCode = async (code: string): Promise<void> => {
+    if (!code || code.length !== 6) {
+      throw new Error('Please enter a valid 6-character code');
+    }
+    const callRoom = `manual-${code.toUpperCase()}`;
+    setRoomId(callRoom);
+    setIsManualCall(true);
+  };
+
+  const manualLeave = async (): Promise<void> => {
+    await leave();
+    setIsManualCall(false);
+    setRoomId(undefined);
+  };
 
   const value = useMemo(
-    () => ({ muted, setMuted, joinedRoomId: roomId, connected, joinCall: join, leaveCall: leave }),
-    [muted, roomId, connected, join, leave]
+    () => ({ 
+      muted, 
+      setMuted, 
+      joinedRoomId: roomId, 
+      connected, 
+      joinCall: join, 
+      leaveCall: isManualCall ? manualLeave : leave, 
+      speakingUsers, 
+      isSelfSpeaking,
+      userCode,
+      joinByCode,
+      createManualCall,
+      setUserVolume,
+      getUserVolume,
+      getUserVolumes,
+      setPushToTalkEnabled,
+      setPushToTalkActive,
+      connectionStats
+    }),
+    [muted, roomId, connected, join, leave, speakingUsers, isSelfSpeaking, userCode, isManualCall, manualLeave, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats]
   );
 
   useEffect(() => {
     try {
       (window as any).__hexcall_join = () => join(true);
-      (window as any).__hexcall_leave = () => leave();
+      (window as any).__hexcall_leave = () => (isManualCall ? manualLeave : leave)();
     } catch {}
-  }, [join, leave]);
+  }, [join, leave, isManualCall, manualLeave]);
+
+  // Set up push-to-talk hotkey listener
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const off = window.hexcall?.onHotkeyPushToTalk?.((active: boolean) => {
+      setPushToTalkActive?.(active);
+    });
+
+    return () => off?.();
+  }, [setPushToTalkActive]);
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }

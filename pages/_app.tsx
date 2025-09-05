@@ -1,16 +1,46 @@
 import type { AppProps } from 'next/app';
 import '../styles/globals.css';
 import { VoiceProvider } from '../providers/VoiceProvider';
+import { useEffect } from 'react';
+import { ToastContainer, useToast } from '../components/Toast';
 
 const drag = { WebkitAppRegion: 'drag' } as any;
 const noDrag = { WebkitAppRegion: 'no-drag' } as any;
 
-export default function App({ Component, pageProps, router }: any) {
+interface AppContentProps {
+	Component: React.ComponentType<any>;
+	pageProps: any;
+	router: {
+		pathname: string;
+	};
+}
+
+function AppContent({ Component, pageProps, router }: AppContentProps) {
+	const isOverlay = router?.pathname === '/overlay';
+	const { toasts, removeToast } = useToast();
+	
+	// Apply transparent background for overlay
+	useEffect(() => {
+		if (isOverlay) {
+			document.body.style.backgroundColor = 'transparent';
+			document.documentElement.style.backgroundColor = 'transparent';
+		} else {
+			document.body.style.backgroundColor = '';
+			document.documentElement.style.backgroundColor = '';
+		}
+		
+		return () => {
+			// Cleanup on unmount
+			document.body.style.backgroundColor = '';
+			document.documentElement.style.backgroundColor = '';
+		};
+	}, [isOverlay]);
+	
 	return (
-		<VoiceProvider>
-			<div className="min-h-screen">
+		<>
+			<div className={isOverlay ? "" : "min-h-screen"}>
 				{/* Hide title bar on overlay route */}
-				{router?.pathname !== '/overlay' && (
+				{!isOverlay && (
 					<div className="h-8 flex items-center justify-between px-3 select-none bg-neutral-950/80 border-b border-white/10" style={drag}>
 						<div className="text-xs text-neutral-400">Hexcall</div>
 						<div className="flex gap-1.5" style={noDrag}>
@@ -23,6 +53,15 @@ export default function App({ Component, pageProps, router }: any) {
 				)}
 				<Component {...pageProps} />
 			</div>
+			{!isOverlay && <ToastContainer toasts={toasts} onRemove={removeToast} />}
+		</>
+	);
+}
+
+export default function App({ Component, pageProps, router }: AppContentProps) {
+	return (
+		<VoiceProvider>
+			<AppContent Component={Component} pageProps={pageProps} router={router} />
 		</VoiceProvider>
 	);
 }
