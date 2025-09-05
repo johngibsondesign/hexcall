@@ -30,6 +30,8 @@ type Teammate = {
 	summonerId?: string;
 	accountId?: string;
 	position?: string;
+	displayName?: string;
+	displayType?: 'summoner' | 'champion';
 };
 
 export default function Overlay() {
@@ -111,32 +113,57 @@ export default function Overlay() {
 				}).catch(() => {});
 			}
 			const byPuuid: Record<string, any> = {};
+			const isInGameOrPost = ['InProgress', 'EndOfGame'].includes(phase);
+			
+			// Build player data based on phase
 			for (const m of members) {
 				const puuid = m.puuid || m.summonerId || m.accountId || String(Math.random());
+				const role = (m.assignedPosition || m.position || '').toLowerCase();
+				const normalizedRole = role === 'bottom' ? 'adc' : role;
+				
+				const playerName = m.summonerName || m.gameName || 'Player';
 				byPuuid[puuid] = {
 					puuid,
-					name: m.summonerName || m.gameName || 'Player',
-					role: (m.assignedPosition || m.position || '').toLowerCase(),
-					iconUrl: phase !== 'InProgress' ? (
-						m.iconUrl || (m.profileIconId ? `https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/profileicon/${m.profileIconId}.png` : undefined)
-					) : undefined,
+					name: playerName,
+					role: normalizedRole,
+					summonerId: m.summonerId,
+					accountId: m.accountId,
+					profileIconId: m.profileIconId,
+					// For lobby phases, show summoner icons
+					iconUrl: !isInGameOrPost && m.profileIconId ? 
+						`https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/profileicon/${m.profileIconId}.png` : undefined,
 					volume: 1,
+					displayType: isInGameOrPost ? 'champion' : 'summoner',
+					displayName: playerName // Default to player name, will be overridden for champions
 				};
 			}
+			
+			// Overlay champion data for in-game phases
 			for (const s of sessionTeam) {
 				const puuid = s?.puuid || s?.summonerId || s?.accountId;
 				if (!puuid) continue;
 				const role = (s?.assignedPosition || s?.position || '').toLowerCase();
-				if (byPuuid[puuid]) byPuuid[puuid].role = role;
-				if (phase === 'InProgress') {
-					const champ = s?.championName || s?.championId;
-					if (champ && byPuuid[puuid]) {
-						let name = typeof champ === 'string' ? champ : undefined;
-						if (!name) {
-							const mapped = champKeyToNameRef.current[String(champ)] || '';
-							if (mapped) name = mapped;
+				const normalizedRole = role === 'bottom' ? 'adc' : role;
+				
+				if (byPuuid[puuid]) {
+					byPuuid[puuid].role = normalizedRole;
+					byPuuid[puuid].championName = s?.championName;
+					byPuuid[puuid].championId = s?.championId;
+					
+					// For in-game/post-game phases, show champion icons
+					if (isInGameOrPost) {
+						const champ = s?.championName || s?.championId;
+						if (champ) {
+							let champName = typeof champ === 'string' ? champ : undefined;
+							if (!champName) {
+								const mapped = champKeyToNameRef.current[String(champ)] || '';
+								if (mapped) champName = mapped;
+							}
+							if (champName) {
+								byPuuid[puuid].iconUrl = `https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/champion/${champName}.png`;
+								byPuuid[puuid].displayName = champName;
+							}
 						}
-						if (name) byPuuid[puuid].iconUrl = `https://ddragon.leagueoflegends.com/cdn/${ddVer}/img/champion/${name}.png`;
 					}
 				}
 			}
@@ -279,8 +306,8 @@ export default function Overlay() {
 				{!hasData && (
 					<div className="px-1.5 py-1 text-neutral-400 text-[10px]">Overlay ready</div>
 				)}
-				{enhancedTeammates.map(tm => {
-					const role = tm.normalizedRole || 'unknown';
+				{teammates.map(tm => {
+					const role = tm.role || 'unknown';
 					const roleColors = {
 						'top': 'bg-blue-400',
 						'jungle': 'bg-green-400', 
@@ -333,14 +360,33 @@ export default function Overlay() {
 									? `ring-2 ${theme.colors.speaking} ${theme.effects.shadow} animate-pulse` 
 									: `${theme.colors.border} group-hover:${theme.colors.accent}`
 							}`}>
-								<ChampionIcon
-									championName={tm.championName}
-									championId={tm.championId}
-									profileIconId={tm.profileIconId}
-									alt={tm.name || 'Player'}
-									role={tm.role}
-									className="w-full h-full object-cover"
-								/>
+								{tm.iconUrl ? (
+									<img 
+										src={tm.iconUrl} 
+										alt={tm.displayName || tm.name || 'Player'}
+										className="w-full h-full object-cover"
+										onError={(e) => {
+											// Fallback to ChampionIcon on error
+											const target = e.target as HTMLImageElement;
+											target.style.display = 'none';
+											const parent = target.parentElement;
+											if (parent) {
+												const fallback = document.createElement('div');
+												fallback.innerHTML = `<div class="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center"><span class="text-xs text-neutral-300">${(tm.displayName || tm.name || 'P')[0].toUpperCase()}</span></div>`;
+												parent.appendChild(fallback);
+											}
+										}}
+									/>
+								) : (
+									<ChampionIcon
+										championName={tm.championName}
+										championId={tm.championId}
+										profileIconId={tm.profileIconId}
+										alt={tm.displayName || tm.name || 'Player'}
+										role={tm.role}
+										className="w-full h-full object-cover"
+									/>
+								)}
 							</div>
 							{/* Speaking indicator dot */}
 							{tm.speaking && (
@@ -350,8 +396,13 @@ export default function Overlay() {
 													<div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
 								<div className="pointer-events-auto bg-neutral-950/80 backdrop-blur-sm border border-neutral-800/60 rounded-xl p-3 shadow-xl flex flex-col items-center gap-3 min-w-[140px]">
 									<div className="text-xs text-white font-medium text-center truncate max-w-[120px]">
-										{tm.name}
+										{tm.displayName || tm.name}
 									</div>
+									{tm.displayType === 'champion' && tm.name !== tm.displayName && (
+										<div className="text-[10px] text-neutral-400 text-center truncate max-w-[120px]">
+											{tm.name}
+										</div>
+									)}
 									
 									<CompactVolumeSlider
 										userId={tm.puuid || tm.name || ''}
