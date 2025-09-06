@@ -791,6 +791,10 @@ export class VoiceClient {
 		this.stream?.getAudioTracks().forEach(t => (t.enabled = !muted));
 	}
 
+	updatePresence(meta: any) {
+		return this.signaling.updatePresence(meta);
+	}
+
 	cleanup = async (closeSignaling: boolean = true) => {
 		console.log('[VoiceClient] Cleaning up resources...');
 		

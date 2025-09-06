@@ -128,7 +128,7 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 		speakingUsers,
 		isSelfSpeaking,
 		applyConstraints: (u: any) => clientRef.current?.applyConstraints(u), 
-		updatePresence: (meta: any) => signalingRef.current?.updatePresence(meta),
+		updatePresence: (meta: any) => clientRef.current?.updatePresence(meta),
 		setVadThreshold,
 		setUserVolume,
 		getUserVolume,
