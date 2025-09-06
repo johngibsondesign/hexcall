@@ -122,7 +122,12 @@ app.whenReady().then(() => {
 	// auto-updater
 	autoUpdater.autoDownload = false;
 	autoUpdater.on('update-available', (info) => {
+		console.log('[AutoUpdater] Update available, starting download:', info.version);
 		mainWindow?.webContents.send('updates:available', info);
+		// Automatically start download when update is found
+		autoUpdater.downloadUpdate().catch(err => {
+			console.error('[AutoUpdater] Download failed:', err);
+		});
 	});
 	autoUpdater.on('update-not-available', (info) => {
 		mainWindow?.webContents.send('updates:none', info);
@@ -324,15 +329,30 @@ ipcMain.handle('window:maximize-toggle', () => {
 });
 
 ipcMain.handle('updates:check', async () => {
-	try { await autoUpdater.checkForUpdates(); } catch {}
+	try { 
+		console.log('[AutoUpdater] Manual check for updates requested');
+		await autoUpdater.checkForUpdates(); 
+	} catch (err) {
+		console.error('[AutoUpdater] Check failed:', err);
+	}
 });
 
 ipcMain.handle('updates:download', async () => {
-	try { await autoUpdater.downloadUpdate(); } catch {}
+	try { 
+		console.log('[AutoUpdater] Manual download requested');
+		await autoUpdater.downloadUpdate(); 
+	} catch (err) {
+		console.error('[AutoUpdater] Manual download failed:', err);
+	}
 });
 
 ipcMain.handle('updates:quitAndInstall', () => {
-	autoUpdater.quitAndInstall();
+	try { 
+		console.log('[AutoUpdater] Quit and install requested');
+		autoUpdater.quitAndInstall(); 
+	} catch (err) {
+		console.error('[AutoUpdater] Quit and install failed:', err);
+	}
 });
 
 

@@ -139,17 +139,25 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
     if (auto && roomId && !connected) {
+      console.log('[VoiceProvider] Auto-joining room:', roomId, 'isManualCall:', isManualCall);
       // Auto-join for League rooms or manual calls
       join(true);
     }
-  }, [roomId, connected, join]);
+  }, [roomId, connected, join, isManualCall]);
 
   // Manual call functions
   const createManualCall = async (): Promise<string> => {
     const callRoom = `manual-${userCode}`;
     console.log('[VoiceProvider] Creating manual call room:', callRoom);
-    setRoomId(callRoom);
     setIsManualCall(true);
+    setRoomId(callRoom);
+    // Small delay to ensure the new VoiceClient is initialized before auto-join
+    setTimeout(() => {
+      if (!connected) {
+        console.log('[VoiceProvider] Manual call auto-join trigger');
+        join(true);
+      }
+    }, 100);
     return userCode;
   };
 
@@ -158,8 +166,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       throw new Error('Please enter a valid 6-character code');
     }
     const callRoom = `manual-${code.toUpperCase()}`;
-    setRoomId(callRoom);
+    console.log('[VoiceProvider] Joining manual call room:', callRoom);
     setIsManualCall(true);
+    setRoomId(callRoom);
+    // Small delay to ensure the new VoiceClient is initialized before auto-join
+    setTimeout(() => {
+      if (!connected) {
+        console.log('[VoiceProvider] Join by code auto-join trigger');
+        join(true);
+      }
+    }, 100);
   };
 
   const manualLeave = async (): Promise<void> => {

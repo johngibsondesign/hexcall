@@ -50,7 +50,11 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 			showInfo('Downloading update…', `${pct}%`, 1200);
 		});
 		const offDownloaded = window.hexcall?.onUpdateDownloaded?.(() => {
-			showSuccess('Update ready', 'Restart to install');
+			showSuccess('Update downloaded!', 'Installing in 5 seconds...', 5000);
+			// Auto-install after 5 seconds
+			setTimeout(() => {
+				window.hexcall?.updatesQuitAndInstall?.();
+			}, 5000);
 		});
 		return () => {
 			offNone && offNone();
