@@ -141,6 +141,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     if (auto && roomId && !connected) {
       console.log('[VoiceProvider] Auto-joining room:', roomId, 'isManualCall:', isManualCall);
       // Auto-join for League rooms or manual calls
+      // For League rooms, always force join even if alone initially
       join(true);
     }
   }, [roomId, connected, join, isManualCall]);
@@ -216,8 +217,23 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     try {
       (window as any).__hexcall_join = () => join(true);
       (window as any).__hexcall_leave = () => (isManualCall ? manualLeave : leave)();
+      
+      // Debug function for troubleshooting
+      (window as any).__hexcall_debug = () => {
+        console.log('=== HexCall Debug Info ===');
+        console.log('Room ID:', roomId);
+        console.log('User Code:', userCode);
+        console.log('Connected:', connected);
+        console.log('Is Manual Call:', isManualCall);
+        console.log('Muted:', muted);
+        console.log('Environment Check:');
+        console.log('- Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ Set' : '✗ Missing');
+        console.log('- Supabase Key:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓ Set' : '✗ Missing');
+        console.log('- TURN URL:', process.env.NEXT_PUBLIC_METERED_TURN_URL ? '✓ Set' : '✗ Not set (optional)');
+        console.log('========================');
+      };
     } catch {}
-  }, [join, leave, isManualCall, manualLeave]);
+  }, [join, leave, isManualCall, manualLeave, roomId, userCode, connected, muted]);
 
   // Set up push-to-talk hotkey listener
   useEffect(() => {

@@ -36,33 +36,6 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 		};
 	}, [isOverlay]);
 	
-	// Subscribe to updater events
-	useEffect(() => {
-		const offNone = window.hexcall?.onUpdateNone?.(() => {
-			showInfo('No updates found');
-		});
-		const offAvailable = window.hexcall?.onUpdateAvailable?.((info: any) => {
-			const v = info?.version ? `v${info.version}` : '';
-			showInfo('Update available', v);
-		});
-		const offProgress = window.hexcall?.onUpdateProgress?.((p: any) => {
-			const pct = Math.round(p?.percent || 0);
-			showInfo('Downloading update…', `${pct}%`, 1200);
-		});
-		const offDownloaded = window.hexcall?.onUpdateDownloaded?.(() => {
-			showSuccess('Update downloaded!', 'Installing in 5 seconds...', 5000);
-			// Auto-install after 5 seconds
-			setTimeout(() => {
-				window.hexcall?.updatesQuitAndInstall?.();
-			}, 5000);
-		});
-		return () => {
-			offNone && offNone();
-			offAvailable && offAvailable();
-			offProgress && offProgress();
-			offDownloaded && offDownloaded();
-		};
-	}, [showInfo, showSuccess]);
 
 	return (
 		<>

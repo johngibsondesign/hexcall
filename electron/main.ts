@@ -122,12 +122,8 @@ app.whenReady().then(() => {
 	// auto-updater
 	autoUpdater.autoDownload = false;
 	autoUpdater.on('update-available', (info) => {
-		console.log('[AutoUpdater] Update available, starting download:', info.version);
+		console.log('[AutoUpdater] Update available:', info.version);
 		mainWindow?.webContents.send('updates:available', info);
-		// Automatically start download when update is found
-		autoUpdater.downloadUpdate().catch(err => {
-			console.error('[AutoUpdater] Download failed:', err);
-		});
 	});
 	autoUpdater.on('update-not-available', (info) => {
 		mainWindow?.webContents.send('updates:none', info);
@@ -220,8 +216,6 @@ app.whenReady().then(() => {
 		handlePushToTalkRelease();
 	});
 
-	// check for updates silently on start
-	try { autoUpdater.checkForUpdates(); } catch {}
 
 	// basic poller for LCU state
 	setInterval(async () => {

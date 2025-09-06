@@ -3,7 +3,7 @@ import { useVoiceRoom } from '../hooks/useVoiceRoom';
 import { useVoice } from '../providers/VoiceProvider';
 import { DetailedConnectionStats } from '../components/ConnectionQualityIndicator';
 import Link from 'next/link';
-import { FaArrowsRotate } from 'react-icons/fa6';
+import { FaArrowsRotate, FaDownload, FaCheck, FaSpinner } from 'react-icons/fa6';
 
 type MediaDeviceInfoLite = Pick<MediaDeviceInfo, 'deviceId' | 'label' | 'kind'>;
 
@@ -25,6 +25,11 @@ export default function Settings() {
 	const [noiseGate, setNoiseGate] = useState(0.03);
 	const [autoJoin, setAutoJoin] = useState(true);
 	const [vadThreshold, setVadThreshold] = useState(0.01);
+	
+	// Update-related state
+	const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'none'>('idle');
+	const [updateInfo, setUpdateInfo] = useState<any>(null);
+	const [downloadProgress, setDownloadProgress] = useState(0);
 
 	const micCtxRef = useRef<AudioContext | null>(null);
 	const micAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -221,6 +226,66 @@ export default function Settings() {
 		// Update voice client
 		setPushToTalkEnabled?.(usePushToTalk);
 	}, [usePushToTalk, pushToTalkKey, setPushToTalkEnabled]);
+
+	// Update event listeners
+	useEffect(() => {
+		if (!window.hexcall) return;
+
+		const offUpdateNone = window.hexcall.onUpdateNone?.(() => {
+			setUpdateStatus('none');
+		});
+
+		const offUpdateAvailable = window.hexcall.onUpdateAvailable?.((info: any) => {
+			setUpdateStatus('available');
+			setUpdateInfo(info);
+		});
+
+		const offUpdateProgress = window.hexcall.onUpdateProgress?.((progress: any) => {
+			setUpdateStatus('downloading');
+			setDownloadProgress(Math.round(progress?.percent || 0));
+		});
+
+		const offUpdateDownloaded = window.hexcall.onUpdateDownloaded?.(() => {
+			setUpdateStatus('downloaded');
+			setDownloadProgress(100);
+		});
+
+		return () => {
+			offUpdateNone?.();
+			offUpdateAvailable?.();
+			offUpdateProgress?.();
+			offUpdateDownloaded?.();
+		};
+	}, []);
+
+	// Update functions
+	const checkForUpdates = async () => {
+		setUpdateStatus('checking');
+		setUpdateInfo(null);
+		setDownloadProgress(0);
+		try {
+			await window.hexcall?.updatesCheck?.();
+		} catch (error) {
+			console.error('Failed to check for updates:', error);
+			setUpdateStatus('idle');
+		}
+	};
+
+	const downloadUpdate = async () => {
+		try {
+			await window.hexcall?.updatesDownload?.();
+		} catch (error) {
+			console.error('Failed to download update:', error);
+		}
+	};
+
+	const installUpdate = async () => {
+		try {
+			await window.hexcall?.updatesQuitAndInstall?.();
+		} catch (error) {
+			console.error('Failed to install update:', error);
+		}
+	};
 
 	// Audio testing functions
 	const startAudioTest = async () => {
@@ -496,6 +561,75 @@ export default function Settings() {
 							<p className="text-xs text-neutral-400">
 								Export your settings to backup or share with other devices. Import to restore previous settings.
 							</p>
+						</div>
+					</div>
+
+					<div className="glass rounded-xl p-5">
+						<h2 className="text-sm text-neutral-300 mb-3">App Updates</h2>
+						<div className="grid gap-3">
+							<div className="flex items-center gap-3">
+								<button
+									onClick={checkForUpdates}
+									disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+									className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 disabled:bg-neutral-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium disabled:cursor-not-allowed"
+								>
+									{updateStatus === 'checking' ? (
+										<>
+											<FaSpinner className="animate-spin" />
+											Checking...
+										</>
+									) : (
+										<>
+											<FaArrowsRotate />
+											Check for Updates
+										</>
+									)}
+								</button>
+								
+								{updateStatus === 'available' && (
+									<button
+										onClick={downloadUpdate}
+										className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium"
+									>
+										<FaDownload />
+										Download Update
+									</button>
+								)}
+								
+								{updateStatus === 'downloaded' && (
+									<button
+										onClick={installUpdate}
+										className="flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium"
+									>
+										<FaCheck />
+										Install & Restart
+									</button>
+								)}
+							</div>
+							
+							{updateStatus === 'downloading' && (
+								<div className="space-y-2">
+									<div className="flex justify-between text-xs text-neutral-400">
+										<span>Downloading update...</span>
+										<span>{downloadProgress}%</span>
+									</div>
+									<div className="w-full bg-neutral-800 rounded-full h-2">
+										<div 
+											className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+											style={{ width: `${downloadProgress}%` }}
+										></div>
+									</div>
+								</div>
+							)}
+							
+							<div className="text-xs text-neutral-400">
+								{updateStatus === 'none' && 'No updates available'}
+								{updateStatus === 'available' && updateInfo && (
+									<span>Update available: v{updateInfo.version}</span>
+								)}
+								{updateStatus === 'downloaded' && 'Update ready to install'}
+								{updateStatus === 'idle' && 'Click "Check for Updates" to see if a new version is available'}
+							</div>
 						</div>
 					</div>
 

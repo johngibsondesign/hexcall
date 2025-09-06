@@ -375,6 +375,7 @@ export class VoiceClient {
 	public onConnectionStateChange?: (state: string) => void;
 	public onError?: (error: Error) => void;
 	public onConnectionStats?: (stats: ConnectionStats) => void;
+	public onPresenceUpdate?: (peers: { id: string; meta?: any }[]) => void;
 
 	constructor(private opts: VoiceClientOptions) {
 		this.signaling = new SupabaseSignaling(opts.roomId, opts.userId);
@@ -406,9 +407,15 @@ export class VoiceClient {
 
 	async init() {
 		try {
+			console.log('[VoiceClient] Initializing signaling for room:', this.opts.roomId);
 			await this.signaling.subscribe(this.onSignal);
-			await this.signaling.presence();
+			await this.signaling.presence((peers) => {
+				console.log('[VoiceClient] Presence update received:', peers);
+				this.onPresenceUpdate?.(peers);
+			}, { userId: this.opts.userId });
+			console.log('[VoiceClient] Signaling initialized successfully');
 		} catch (error) {
+			console.error('[VoiceClient] Failed to initialize signaling:', error);
 			this.handleError(new Error(`Failed to initialize signaling: ${error}`));
 		}
 	}

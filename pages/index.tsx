@@ -11,13 +11,18 @@ import {
 	FaGamepad, 
 	FaUsers,
 	FaCopy,
-	FaPlus
+	FaPlus,
+	FaQuestion
 } from 'react-icons/fa6';
 import { RoleIcon } from '../components/RoleIcon';
 import { ChampionIconWithPreview } from '../components/ChampionIcon';
 import { VolumeSlider } from '../components/VolumeSlider';
 import { ConnectionQualityIndicator } from '../components/ConnectionQualityIndicator';
 import { DebugInfo } from '../components/DebugInfo';
+import { OnboardingWizard } from '../components/OnboardingWizard';
+import { VoiceControlPanel } from '../components/VoiceControlPanel';
+import { SetupStatusCard } from '../components/SetupStatusCard';
+import { QuickStartGuide } from '../components/QuickStartGuide';
 
 interface Teammate {
 	summonerName?: string;
@@ -58,8 +63,11 @@ export default function Home() {
 	const [pushToTalkEnabled, setPushToTalkEnabled] = useState(false);
 	const [pushToTalkKey, setPushToTalkKey] = useState('CapsLock');
 	const [showDebug, setShowDebug] = useState(false);
+	const [showOnboarding, setShowOnboarding] = useState(false);
+	const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
+	const [showQuickStart, setShowQuickStart] = useState(false);
 
-	// Load push-to-talk settings
+	// Load push-to-talk settings and check onboarding
 	useEffect(() => {
 		try {
 			const savedPTT = localStorage.getItem('hexcall-push-to-talk');
@@ -67,6 +75,14 @@ export default function Home() {
 				const pttSettings = JSON.parse(savedPTT);
 				setPushToTalkEnabled(pttSettings.enabled || false);
 				setPushToTalkKey(pttSettings.key || 'CapsLock');
+			}
+			
+			// Check if user has seen onboarding
+			const seenOnboarding = localStorage.getItem('hexcall-onboarding-seen');
+			if (!seenOnboarding) {
+				setShowOnboarding(true);
+			} else {
+				setHasSeenOnboarding(true);
 			}
 		} catch {}
 	}, []);
@@ -176,6 +192,18 @@ export default function Home() {
 		}
 	};
 
+	const handleOnboardingComplete = () => {
+		setShowOnboarding(false);
+		setHasSeenOnboarding(true);
+		localStorage.setItem('hexcall-onboarding-seen', 'true');
+	};
+
+	const handleOnboardingSkip = () => {
+		setShowOnboarding(false);
+		setHasSeenOnboarding(true);
+		localStorage.setItem('hexcall-onboarding-seen', 'true');
+	};
+
 	return (
 		<div className="min-h-screen bg-hextech flex flex-col">
 			<Head>
@@ -207,9 +235,18 @@ export default function Home() {
 					</div>
 				</div>
 				
-				<Link href="/settings" className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-					<FaGear className="w-5 h-5 text-neutral-400" />
-				</Link>
+				<div className="flex items-center gap-2">
+					<button
+						onClick={() => setShowQuickStart(true)}
+						className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+						title="Quick Start Guide"
+					>
+						<FaQuestion className="w-5 h-5 text-neutral-400" />
+					</button>
+					<Link href="/settings" className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+						<FaGear className="w-5 h-5 text-neutral-400" />
+					</Link>
+				</div>
 			</header>
 
 			{/* Main Content */}
@@ -279,29 +316,21 @@ export default function Home() {
 							</div>
 						</div>
 
-						{/* Call Controls */}
-						<div className="px-6 py-4 border-t border-white/10">
-							<div className="flex items-center justify-center gap-4">
-								<button
-									onClick={() => setMuted?.(!muted)}
-									className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-										muted 
-											? 'bg-red-500 hover:bg-red-600 text-white' 
-											: 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'
-									}`}
-									title={muted ? 'Unmute' : 'Mute'}
-								>
-									{muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
-								</button>
-								
-								<button
-									onClick={() => leaveCall?.()}
-									className="w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all"
-									title="Leave Call"
-								>
-									<FaPhoneSlash />
-								</button>
-							</div>
+						{/* Voice Control Panel */}
+						<div className="px-6 py-4">
+							<VoiceControlPanel
+								connected={connected}
+								connecting={false}
+								muted={muted}
+								isSelfSpeaking={isSelfSpeaking}
+								pushToTalkEnabled={pushToTalkEnabled}
+								pushToTalkActive={false}
+								roomId={joinedRoomId}
+								peerCount={(connectedPeers || []).length}
+								onToggleMute={() => setMuted?.(!muted)}
+								onLeaveCall={() => leaveCall?.()}
+								className="max-w-md mx-auto"
+							/>
 						</div>
 					</div>
 				) : inLobbyOrGame ? (
@@ -330,7 +359,12 @@ export default function Home() {
 								<FaGamepad className="w-10 h-10 text-neutral-400" />
 							</div>
 							<h2 className="text-2xl font-bold text-white mb-4">Ready for Voice Chat</h2>
-							<p className="text-neutral-400 mb-8">Start League of Legends for auto-join, or create a manual call</p>
+							<p className="text-neutral-400 mb-6">Start League of Legends for auto-join, or create a manual call</p>
+							
+							{/* Setup Status */}
+							<div className="mb-6">
+								<SetupStatusCard />
+							</div>
 							
 							{/* Manual Call Options */}
 							<div className="space-y-4 mb-8">
@@ -435,6 +469,21 @@ export default function Home() {
 			
 			{/* Debug Modal */}
 			<DebugInfo visible={showDebug} onClose={() => setShowDebug(false)} />
+			
+			{/* Onboarding Wizard */}
+			{showOnboarding && (
+				<OnboardingWizard
+					onComplete={handleOnboardingComplete}
+					onSkip={handleOnboardingSkip}
+				/>
+			)}
+			
+			{/* Quick Start Guide */}
+			{showQuickStart && (
+				<QuickStartGuide
+					onClose={() => setShowQuickStart(false)}
+				/>
+			)}
 		</div>
 	);
 }

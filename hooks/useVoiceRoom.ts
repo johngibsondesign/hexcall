@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { VoiceClient, ConnectionStats } from '../modules/webrtc/voiceClient';
-import { SupabaseSignaling } from '../modules/signaling';
 
 export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: string) {
 	const clientRef = useRef<VoiceClient | null>(null);
-	const signalingRef = useRef<SupabaseSignaling | null>(null);
 	const [connected, setConnected] = useState(false);
 	const [canJoin, setCanJoin] = useState(false);
 	const [peerIds, setPeerIds] = useState<string[]>([]);
@@ -38,11 +36,8 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			setConnectionStats(stats);
 		};
 		
-		client.init();
-		const signaling = new SupabaseSignaling(roomId, userId);
-		signalingRef.current = signaling;
-		signaling.subscribe(() => {});
-		signaling.presence((peers) => {
+		// Set up presence callback to get the signaling instance from the client
+		client.onPresenceUpdate = (peers: { id: string; meta?: any }[]) => {
 			const ids = peers.map(p => p.id);
 			setPeerIds(ids);
 			// Allow joining even if alone; mesh forms when others join
@@ -60,22 +55,32 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			try { localStorage.setItem('hexcall-presence', JSON.stringify(ids)); } catch {}
 			try { localStorage.setItem('hexcall-presence-metas', JSON.stringify(peers)); } catch {}
 			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids } as any)); } catch {}
-		}, { userId });
+		};
+		
+		// Initialize the client (this will set up signaling and presence)
+		client.init();
+		
 		return () => {
 			client.cleanup();
 			clientRef.current = null;
-			signalingRef.current?.close();
-			signalingRef.current = null;
 		};
 	}, [roomId, userId, micDeviceId]);
 
 	const join = useCallback(async (forceAlone: boolean = false) => {
-		if (!forceAlone && !canJoin) return;
-		if (connected) return; // Already connected
+		if (!forceAlone && !canJoin) {
+			console.log('[useVoiceRoom] Cannot join - canJoin:', canJoin, 'forceAlone:', forceAlone);
+			return;
+		}
+		if (connected) {
+			console.log('[useVoiceRoom] Already connected');
+			return;
+		}
 		
+		console.log('[useVoiceRoom] Attempting to join room with forceAlone:', forceAlone);
 		try {
 			await clientRef.current?.join();
 			setConnected(true);
+			console.log('[useVoiceRoom] Successfully joined room');
 		} catch (error) {
 			console.error('[useVoiceRoom] Join failed:', error);
 			setConnected(false);
