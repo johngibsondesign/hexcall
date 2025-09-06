@@ -71,9 +71,16 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 
 	const join = useCallback(async (forceAlone: boolean = false) => {
 		if (!forceAlone && !canJoin) return;
-		await clientRef.current?.join();
-		setConnected(true);
-	}, [canJoin]);
+		if (connected) return; // Already connected
+		
+		try {
+			await clientRef.current?.join();
+			setConnected(true);
+		} catch (error) {
+			console.error('[useVoiceRoom] Join failed:', error);
+			setConnected(false);
+		}
+	}, [canJoin, connected]);
 
 	const leave = useCallback(async () => {
 		await clientRef.current?.cleanup();

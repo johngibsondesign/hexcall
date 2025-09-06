@@ -128,14 +128,16 @@ export default function Home() {
 		return () => { off && off(); };
 	}, []);
 
-	const inLobbyOrGame = useMemo(() => (
-		['Matchmaking','ReadyCheck','ChampSelect','Lobby','InProgress'].includes(gamePhase)
-	), [gamePhase]);
+	const inLobbyOrGame = useMemo(() => {
+		const phase = typeof gamePhase === 'string' ? gamePhase : '';
+		return ['Matchmaking','ReadyCheck','ChampSelect','Lobby','InProgress'].includes(phase);
+	}, [gamePhase]);
 
 	const getGameStateColor = (state: string) => {
-		if (state.includes('Finding') || state.includes('Connecting')) return 'text-yellow-400';
-		if (state.includes('Ready') || state.includes('Game')) return 'text-green-400';
-		if (state.includes('Not Running')) return 'text-red-400';
+		const safeState = typeof state === 'string' ? state : '';
+		if (safeState.includes('Finding') || safeState.includes('Connecting')) return 'text-yellow-400';
+		if (safeState.includes('Ready') || safeState.includes('Game')) return 'text-green-400';
+		if (safeState.includes('Not Running')) return 'text-red-400';
 		return 'text-blue-400';
 	};
 
