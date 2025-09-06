@@ -322,7 +322,7 @@ export default function Home() {
 								connected={connected}
 								connecting={false}
 								muted={muted}
-								isSelfSpeaking={isSelfSpeaking}
+								isSelfSpeaking={isSelfSpeaking || false}
 								pushToTalkEnabled={pushToTalkEnabled}
 								pushToTalkActive={false}
 								roomId={joinedRoomId}
