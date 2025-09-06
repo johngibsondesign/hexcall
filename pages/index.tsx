@@ -86,7 +86,7 @@ export default function Home() {
 				};
 			};
 		}) => {
-			const phase = payload?.phase || 'Unknown';
+			const phase = typeof payload?.phase === 'string' ? payload.phase : 'Unknown';
 			setGamePhase(phase);
 			
 			// Set user-friendly game state

@@ -116,12 +116,24 @@ export function DebugInfo({ visible, onClose }: DebugInfoProps) {
               <div>Phase: <span className="text-blue-400">{lcuStatus.phase || 'Unknown'}</span></div>
               <div>Game Phase: <span className="text-blue-400">{lcuStatus.gamePhase || 'Unknown'}</span></div>
               <div>Members: <span className="text-blue-400">{lcuStatus.members?.length || 0}</span></div>
-              <div>Lobby ID: <span className="text-blue-400">{lcuStatus.lobby?.lobbyId || 'None'}</span></div>
-              <div>Party ID: <span className="text-blue-400">{lcuStatus.lobby?.partyId || 'None'}</span></div>
+              <div>Lobby ID: <span className="text-blue-400">{
+                typeof lcuStatus.lobby?.lobbyId === 'object' 
+                  ? JSON.stringify(lcuStatus.lobby.lobbyId) 
+                  : (lcuStatus.lobby?.lobbyId || 'None')
+              }</span></div>
+              <div>Party ID: <span className="text-blue-400">{
+                typeof lcuStatus.lobby?.partyId === 'object' 
+                  ? JSON.stringify(lcuStatus.lobby.partyId) 
+                  : (lcuStatus.lobby?.partyId || 'None')
+              }</span></div>
               {lcuStatus.self && (
                 <div>Self: <span className="text-blue-400">{lcuStatus.self.puuid ? 'Detected' : 'Not detected'}</span></div>
               )}
-              {lcuStatus.error && <div className="text-red-400">Error: {lcuStatus.error}</div>}
+              {lcuStatus.error && <div className="text-red-400">Error: {
+                typeof lcuStatus.error === 'object' 
+                  ? JSON.stringify(lcuStatus.error) 
+                  : String(lcuStatus.error)
+              }</div>}
               <div className="text-xs text-neutral-500">Raw data: {JSON.stringify(lcuStatus).slice(0, 100)}...</div>
             </div>
           ) : (
