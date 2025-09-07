@@ -280,8 +280,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     let iconUrl = '';
     
     try {
-      const { name, riotId: rId } = getCachedFullDisplayName(userId);
-      const iUrl = getCachedIconUrl(currentGamePhase, userId);
+      const { name, riotId: rId } = getCachedFullDisplayName();
+      const iUrl = getCachedIconUrl(currentGamePhase);
       displayName = name || 'User';
       riotId = rId || '';
       iconUrl = iUrl || '';
@@ -332,8 +332,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       let selfIconUrl = '';
       
       try {
-        const { name, riotId } = getCachedFullDisplayName(userId);
-        const iconUrl = getCachedIconUrl(currentGamePhase, userId);
+        const { name, riotId } = getCachedFullDisplayName();
+        const iconUrl = getCachedIconUrl(currentGamePhase);
         selfName = name || 'User';
         selfRiotId = riotId || '';
         selfIconUrl = iconUrl || '';
