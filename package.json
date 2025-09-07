@@ -59,6 +59,7 @@
       "package.json"
     ],
     "win": {
+      "artifactName": "Hexcall-Setup-${version}.${ext}",
       "target": [
         "nsis"
       ]
