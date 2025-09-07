@@ -35,10 +35,23 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 		client.onConnectionStats = (stats: ConnectionStats) => {
 			setConnectionStats(stats);
 		};
+
+		// When peer map changes (connections established/removed), update peerIds for UI
+		client.onPeersChanged = (ids: string[]) => {
+			console.log('[useVoiceRoom] onPeersChanged ->', ids);
+			// Ensure self is included for display consistency
+			const unique = Array.from(new Set([userId, ...ids]));
+			setPeerIds(unique);
+			try { localStorage.setItem('hexcall-presence', JSON.stringify(unique)); } catch {}
+			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: unique } as any)); } catch {}
+		};
 		
 		// Set up presence callback to get the signaling instance from the client
 		client.onPresenceUpdate = (peers: { id: string; meta?: any }[]) => {
+			console.log('[useVoiceRoom] Presence update for room:', roomId, 'userId:', userId, 'peers:', peers);
+			
 			const ids = peers.map(p => p.id);
+			console.log('[useVoiceRoom] Setting peerIds to:', ids);
 			setPeerIds(ids);
 			// Allow joining even if alone; mesh forms when others join
 			setCanJoin(true);

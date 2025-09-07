@@ -28,6 +28,7 @@ var import_path2 = __toESM(require("path"));
 
 // electron/lcu.ts
 var import_https = __toESM(require("https"));
+var import_http = __toESM(require("http"));
 var import_fs = __toESM(require("fs"));
 var import_path = __toESM(require("path"));
 var import_os = __toESM(require("os"));
@@ -89,8 +90,12 @@ function findLCUAuth() {
       console.log("[LCU] Found lockfile at:", p);
       const content = import_fs.default.readFileSync(p, "utf8");
       const [name, pid, port, password, protocol] = content.split(":");
+      if (!port || !password || !protocol) {
+        console.log("[LCU] Invalid lockfile format - missing required fields:", { port: !!port, password: !!password, protocol: !!protocol });
+        continue;
+      }
       const auth = { protocol, address: "127.0.0.1", port: Number(port), username: "riot", password };
-      console.log("[LCU] Successfully parsed lockfile auth:", { port: auth.port });
+      console.log("[LCU] Successfully parsed lockfile auth:", { port: auth.port, protocol: auth.protocol, address: auth.address });
       return auth;
     } catch (error) {
       console.log("[LCU] Error reading lockfile", p, ":", error);
@@ -191,6 +196,7 @@ function getAuthFromRiotClientInstalls() {
 }
 async function lcuRequest(auth, pathName, method = "GET", body) {
   return new Promise((resolve, reject) => {
+    console.log(`[LCU] Making ${method} request to ${auth.protocol}://${auth.address}:${auth.port}${pathName}`);
     const opts = {
       method,
       rejectUnauthorized: false,
@@ -202,13 +208,20 @@ async function lcuRequest(auth, pathName, method = "GET", body) {
         "Content-Type": "application/json"
       }
     };
-    const req = import_https.default.request(opts, (res) => {
+    const requestModule = auth.protocol === "https" ? import_https.default : import_http.default;
+    const req = requestModule.request(opts, (res) => {
       let data = "";
       res.on("data", (chunk) => data += chunk);
       res.on("end", () => {
         try {
+          if (res.statusCode && res.statusCode >= 400) {
+            console.log(`[LCU] Request failed with status ${res.statusCode}: ${data}`);
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
           resolve(data ? JSON.parse(data) : void 0);
         } catch (e) {
+          console.log("[LCU] Failed to parse response:", data);
           reject(e);
         }
       });
@@ -216,7 +229,10 @@ async function lcuRequest(auth, pathName, method = "GET", body) {
     req.setTimeout(2e3, () => {
       req.destroy(new Error("LCU request timeout"));
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      console.log("[LCU] Request error:", err.message);
+      reject(err);
+    });
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
@@ -243,6 +259,7 @@ var mainWindow = null;
 var overlayWindow = null;
 var overlayScale = 1;
 var overlayCorner = "top-right";
+var lastLcuPayload = null;
 function createMainWindow() {
   mainWindow = new import_electron.BrowserWindow({
     width: 1100,
@@ -253,18 +270,28 @@ function createMainWindow() {
     webPreferences: {
       preload: import_path2.default.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false
+      // Allow loading local resources in production
     }
   });
   const isDev = process.env.NODE_ENV === "development";
   if (isDev) {
     mainWindow.loadURL("http://localhost:3000");
   } else {
-    const indexPath = import_path2.default.join(__dirname, "..", "out", "index.html");
+    const appRoot = import_electron.app.getAppPath();
+    const indexPath = import_path2.default.join(appRoot, "out", "index.html");
+    console.log("[MAIN] Loading main window from:", indexPath);
     mainWindow.loadFile(indexPath);
   }
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    console.error("[MAIN] Failed to load:", { errorCode, errorDescription, validatedURL });
+  });
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.log("[MAIN] Main window finished loading");
   });
 }
 function createOverlayWindow() {
@@ -280,20 +307,30 @@ function createOverlayWindow() {
     webPreferences: {
       preload: import_path2.default.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false
+      // Allow loading local resources in production
     }
   });
   const isDev = process.env.NODE_ENV === "development";
   if (isDev) {
     overlayWindow.loadURL("http://localhost:3000/overlay");
   } else {
-    const overlayPath = import_path2.default.join(__dirname, "..", "out", "overlay.html");
+    const appRoot = import_electron.app.getAppPath();
+    const overlayPath = import_path2.default.join(appRoot, "out", "overlay", "index.html");
+    console.log("[OVERLAY] Loading overlay window from:", overlayPath);
     overlayWindow.loadFile(overlayPath);
   }
   overlayWindow.setAlwaysOnTop(true, "floating");
   overlayWindow.setVisibleOnAllWorkspaces(true);
   const { width, height } = overlayWindow.getBounds();
   positionOverlay(width, height);
+  overlayWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    console.error("[OVERLAY] Failed to load:", { errorCode, errorDescription, validatedURL });
+  });
+  overlayWindow.webContents.on("did-finish-load", () => {
+    console.log("[OVERLAY] Overlay window finished loading");
+  });
 }
 function positionOverlay(width, height) {
   const { workArea } = require("electron").screen.getPrimaryDisplay();
@@ -313,20 +350,33 @@ function positionOverlay(width, height) {
   overlayWindow?.setBounds({ x, y, width, height });
 }
 import_electron.app.whenReady().then(() => {
+  try {
+    import_electron.app.setLoginItemSettings({ openAtLogin: true });
+  } catch {
+  }
   createMainWindow();
   createOverlayWindow();
   import_electron_updater.autoUpdater.autoDownload = false;
+  import_electron_updater.autoUpdater.autoInstallOnAppQuit = true;
   import_electron_updater.autoUpdater.on("update-available", (info) => {
+    console.log("[AutoUpdater] Update available:", info.version);
     mainWindow?.webContents.send("updates:available", info);
   });
   import_electron_updater.autoUpdater.on("update-not-available", (info) => {
+    console.log("[AutoUpdater] No update available");
     mainWindow?.webContents.send("updates:none", info);
   });
-  import_electron_updater.autoUpdater.on("download-progress", (p) => {
-    mainWindow?.webContents.send("updates:progress", p);
+  import_electron_updater.autoUpdater.on("download-progress", (progress) => {
+    console.log("[AutoUpdater] Download progress:", progress.percent + "%");
+    mainWindow?.webContents.send("updates:progress", progress);
   });
   import_electron_updater.autoUpdater.on("update-downloaded", (info) => {
+    console.log("[AutoUpdater] Update downloaded, ready to install");
     mainWindow?.webContents.send("updates:downloaded", info);
+  });
+  import_electron_updater.autoUpdater.on("error", (error) => {
+    console.error("[AutoUpdater] Error:", error);
+    mainWindow?.webContents.send("updates:error", { error: error.message });
   });
   import_electron.globalShortcut.register("CommandOrControl+Shift+H", () => {
     if (!overlayWindow) return;
@@ -390,61 +440,67 @@ import_electron.app.whenReady().then(() => {
   import_electron.ipcMain.on("push-to-talk:simulate-release", () => {
     handlePushToTalkRelease();
   });
-  try {
-    import_electron_updater.autoUpdater.checkForUpdates();
-  } catch {
-  }
   setInterval(async () => {
     const auth = findLCUAuth();
     if (!auth) {
-      console.log("[LCU] No auth found, checking League client processes...");
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LCU] No auth found, checking League client processes...");
+      }
       mainWindow?.webContents.send("lcu:update", { phase: "NotFound", members: [], lobby: null, session: null });
       overlayWindow?.webContents.send("lcu:update", { phase: "NotFound", members: [], lobby: null, session: null });
       return;
     }
-    console.log("[LCU] Found auth:", { port: auth.port, protocol: auth.protocol });
+    if (process.env.NODE_ENV === "development") {
+      console.log("[LCU] Found auth:", { port: auth.port, protocol: auth.protocol });
+    }
     try {
-      console.log("[LCU] Making API calls to League client...");
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LCU] Making API calls to League client...");
+      }
       const [phase, membersRaw, lobby, session, self] = await Promise.all([
         getGameflowPhase(auth).catch((e) => {
-          console.log("[LCU] getGameflowPhase error:", e.message);
+          if (process.env.NODE_ENV === "development") console.log("[LCU] getGameflowPhase error:", e.message);
           return "Unknown";
         }),
         getLobbyMembers(auth).catch((e) => {
-          console.log("[LCU] getLobbyMembers error:", e.message);
+          if (process.env.NODE_ENV === "development") console.log("[LCU] getLobbyMembers error:", e.message);
           return [];
         }),
         getLobby(auth).catch((e) => {
-          console.log("[LCU] getLobby error:", e.message);
+          if (process.env.NODE_ENV === "development") console.log("[LCU] getLobby error:", e.message);
           return null;
         }),
         getGameSession(auth).catch((e) => {
-          console.log("[LCU] getGameSession error:", e.message);
+          if (process.env.NODE_ENV === "development") console.log("[LCU] getGameSession error:", e.message);
           return null;
         }),
         getCurrentSummoner(auth).catch((e) => {
-          console.log("[LCU] getCurrentSummoner error:", e.message);
+          if (process.env.NODE_ENV === "development") console.log("[LCU] getCurrentSummoner error:", e.message);
           return null;
         })
       ]);
       const members = Array.isArray(membersRaw) ? membersRaw : [];
-      console.log("[LCU] API results:", { phase, membersCount: members.length, hasLobby: !!lobby, hasSession: !!session, hasSelf: !!self });
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LCU] API results:", { phase, membersCount: members.length, hasLobby: !!lobby, hasSession: !!session, hasSelf: !!self });
+      }
       const payload = { phase, members, lobby, session, self };
-      console.log("[LCU] Sending to renderer:", JSON.stringify(payload).slice(0, 200) + "...");
-      mainWindow?.webContents.send("lcu:update", payload);
-      overlayWindow?.webContents.send("lcu:update", payload);
+      const nextPayloadKey = JSON.stringify(payload);
+      if (nextPayloadKey !== lastLcuPayload) {
+        lastLcuPayload = nextPayloadKey;
+        mainWindow?.webContents.send("lcu:update", payload);
+        overlayWindow?.webContents.send("lcu:update", payload);
+      }
       if (overlayWindow) {
         if (phase === "InProgress") {
           overlayWindow.showInactive();
-        } else {
-          overlayWindow.hide();
+        } else if (phase !== "InProgress") {
         }
       }
     } catch (e) {
       mainWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
       overlayWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
     }
-  }, 3e3);
+  }, 5e3);
 });
 import_electron.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -489,16 +545,53 @@ import_electron.ipcMain.handle("window:maximize-toggle", () => {
 });
 import_electron.ipcMain.handle("updates:check", async () => {
   try {
+    console.log("[AutoUpdater] Manual check for updates requested");
     await import_electron_updater.autoUpdater.checkForUpdates();
-  } catch {
+  } catch (err) {
+    console.error("[AutoUpdater] Check failed:", err);
   }
 });
 import_electron.ipcMain.handle("updates:download", async () => {
   try {
+    console.log("[AutoUpdater] Manual download requested");
     await import_electron_updater.autoUpdater.downloadUpdate();
-  } catch {
+    return { success: true };
+  } catch (err) {
+    console.error("[AutoUpdater] Manual download failed:", err);
+    return { success: false, error: String(err) };
   }
 });
-import_electron.ipcMain.handle("updates:quitAndInstall", () => {
-  import_electron_updater.autoUpdater.quitAndInstall();
+import_electron.ipcMain.handle("updates:quitAndInstall", async () => {
+  try {
+    console.log("[AutoUpdater] Quit and install requested");
+    setTimeout(() => {
+      import_electron_updater.autoUpdater.quitAndInstall();
+    }, 1e3);
+    return { success: true };
+  } catch (err) {
+    console.error("[AutoUpdater] Quit and install failed:", err);
+    return { success: false, error: String(err) };
+  }
+});
+import_electron.ipcMain.handle("app:set-auto-start", async (_, enabled) => {
+  try {
+    import_electron.app.setLoginItemSettings({ openAtLogin: enabled });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+import_electron.ipcMain.handle("overlay:show", async () => {
+  if (overlayWindow) {
+    overlayWindow.showInactive();
+    return { success: true };
+  }
+  return { success: false, error: "Overlay window not available" };
+});
+import_electron.ipcMain.handle("overlay:hide", async () => {
+  if (overlayWindow) {
+    overlayWindow.hide();
+    return { success: true };
+  }
+  return { success: false, error: "Overlay window not available" };
 });

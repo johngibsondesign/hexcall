@@ -46,6 +46,9 @@ import_electron.contextBridge.exposeInMainWorld("hexcall", {
   updatesCheck: () => import_electron.ipcRenderer.invoke("updates:check"),
   updatesDownload: () => import_electron.ipcRenderer.invoke("updates:download"),
   updatesQuitAndInstall: () => import_electron.ipcRenderer.invoke("updates:quitAndInstall"),
+  setAutoStart: (enabled) => import_electron.ipcRenderer.invoke("app:set-auto-start", enabled),
+  showOverlay: () => import_electron.ipcRenderer.invoke("overlay:show"),
+  hideOverlay: () => import_electron.ipcRenderer.invoke("overlay:hide"),
   onUpdateAvailable: (cb) => {
     const l = (_, i) => cb(i);
     import_electron.ipcRenderer.on("updates:available", l);
@@ -65,5 +68,10 @@ import_electron.contextBridge.exposeInMainWorld("hexcall", {
     const l = (_, i) => cb(i);
     import_electron.ipcRenderer.on("updates:downloaded", l);
     return () => import_electron.ipcRenderer.removeListener("updates:downloaded", l);
+  },
+  onUpdateError: (cb) => {
+    const l = (_, e) => cb(e);
+    import_electron.ipcRenderer.on("updates:error", l);
+    return () => import_electron.ipcRenderer.removeListener("updates:error", l);
   }
 });

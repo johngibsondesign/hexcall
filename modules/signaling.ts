@@ -36,6 +36,9 @@ export class SupabaseSignaling {
 		console.log('[SupabaseSignaling] Subscribing to channel');
 		const status = await this.channel.subscribe((status) => {
 			console.log('[SupabaseSignaling] Subscription status:', status);
+			if (status === 'SUBSCRIBED') {
+				console.log('[SupabaseSignaling] Successfully subscribed to channel');
+			}
 			return status === 'SUBSCRIBED';
 		});
 		this.channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
@@ -65,12 +68,28 @@ export class SupabaseSignaling {
 		console.log('[SupabaseSignaling] Setting up presence tracking');
 		this.channel.on('presence', { event: 'sync' }, () => {
 			const state = this.channel!.presenceState<Record<string, any[]>>();
-			const peers = Object.entries(state).map(([id, metas]) => ({ id, meta: metas?.[0] }));
+			console.log('[SupabaseSignaling] Raw presence state:', state);
+			const peers = Object.entries(state).map(([key, metas]) => {
+				const meta = metas?.[0] || {} as any;
+				return { id: (meta as any).userId || key, meta };
+			});
 			console.log('[SupabaseSignaling] Presence sync - peers:', peers);
 			onSync?.(peers);
 		});
 		console.log('[SupabaseSignaling] Tracking presence with meta:', meta);
 		await this.channel.track({ id: this.userId, ts: Date.now(), ...(meta || {}) });
+		
+		// Manually trigger presence sync after a short delay
+		setTimeout(() => {
+			const state = this.channel!.presenceState<Record<string, any[]>>();
+			console.log('[SupabaseSignaling] Manual presence sync - raw state:', state);
+			const peers = Object.entries(state).map(([key, metas]) => {
+				const meta = metas?.[0] || {} as any;
+				return { id: (meta as any).userId || key, meta };
+			});
+			console.log('[SupabaseSignaling] Manual presence sync - peers:', peers);
+			onSync?.(peers);
+		}, 1000);
 	}
 
 	async updatePresence(meta: Record<string, any>) {

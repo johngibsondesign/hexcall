@@ -21,6 +21,9 @@ type VoiceContextValue = {
   joinByCode?: (code: string) => Promise<void> | void;
   createManualCall?: () => Promise<string> | string;
   connectedPeers?: Array<{id: string, name?: string, riotId?: string, iconUrl?: string, isSelf?: boolean}>;
+  isHost?: boolean;
+  banUser?: (userId: string) => void;
+  kickUser?: (userId: string) => void;
 };
 
 const VoiceContext = createContext<VoiceContextValue>({ muted: false, setMuted: () => {} });
@@ -89,13 +92,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [currentGamePhase, setCurrentGamePhase] = useState<string>('Unknown');
   const userId = useMemo(() => 'local-' + getStableUserId(), []);
   const [userCode, setUserCode] = useState<string>('DEMO01');
+  const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
     // Only set the real user code on the client side to avoid hydration mismatch
     setUserCode(getUserCode());
   }, []);
 
-  const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, peerIds } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
+  const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, peerIds, updatePresence } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
@@ -186,6 +190,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     console.log('[VoiceProvider] Creating manual call room:', callRoom);
     setIsManualCall(true);
     setRoomId(callRoom);
+    try { localStorage.setItem(`hexcall-host-${callRoom}`, userId); } catch {}
+    setIsHost(true);
     // Small delay to ensure the new VoiceClient is initialized before auto-join
     setTimeout(() => {
       if (!connected) {
@@ -204,6 +210,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     console.log('[VoiceProvider] Joining manual call room:', callRoom);
     setIsManualCall(true);
     setRoomId(callRoom);
+    try { setIsHost(localStorage.getItem(`hexcall-host-${callRoom}`) === userId); } catch {}
     // Small delay to ensure the new VoiceClient is initialized before auto-join
     setTimeout(() => {
       if (!connected) {
@@ -217,10 +224,43 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     await leave();
     setIsManualCall(false);
     setRoomId(undefined);
+    setIsHost(false);
+  };
+
+  // Push our display meta to presence
+  useEffect(() => {
+    if (!roomId) return;
+    const { name, riotId } = getCachedFullDisplayName();
+    const iconUrl = getCachedIconUrl(currentGamePhase);
+    const meta: any = { userId, displayName: name, riotId, iconUrl };
+    if (isHost) meta.hostId = userId;
+    try { updatePresence?.(meta); } catch {}
+  }, [roomId, userId, currentGamePhase, isHost, updatePresence]);
+
+  const banUser = (targetId: string) => {
+    if (!roomId || !isHost) return;
+    const key = `hexcall-banlist-${roomId}`;
+    let list: string[] = [];
+    try { list = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+    if (!list.includes(targetId)) list.push(targetId);
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch {}
+    try { updatePresence?.({ bannedIds: list, hostId: userId }); } catch {}
+  };
+
+  const kickUser = (targetId: string) => {
+    banUser(targetId);
   };
 
   const connectedPeers = useMemo(() => {
     const peers = [];
+    
+    // Debug logging
+    console.log('[VoiceProvider] Building connectedPeers:', {
+      connected,
+      userId,
+      peerIds,
+      currentGamePhase
+    });
     
     // Add yourself first if connected
     if (connected) {
@@ -236,17 +276,27 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
     }
     
+    // Load presence metas to enrich other peers
+    let metaMap: Record<string, any> = {};
+    try {
+      const metas = JSON.parse(localStorage.getItem('hexcall-presence-metas') || '[]');
+      metaMap = (metas || []).reduce((acc: any, p: any) => { acc[p.id] = p.meta || {}; return acc; }, {});
+    } catch {}
+
     // Add other peers
     const otherPeers = (peerIds || [])
       .filter(id => id !== userId)
       .map(id => ({ 
-        id, 
-        name: id.includes('local-') ? 'User' : id.slice(0, 8),
-        riotId: undefined,
+        id,
+        name: (metaMap[id]?.displayName) || (id.includes('local-') ? 'User' : id.slice(0, 8)),
+        riotId: metaMap[id]?.riotId,
+        iconUrl: metaMap[id]?.iconUrl,
         isSelf: false
       }));
     
     peers.push(...otherPeers);
+    
+    console.log('[VoiceProvider] Final connectedPeers:', peers);
     return peers;
   }, [peerIds, userId, connected, currentGamePhase]);
 
@@ -269,9 +319,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       setPushToTalkEnabled,
       setPushToTalkActive,
       connectionStats,
-      connectedPeers
+      connectedPeers,
+      isHost,
+      banUser,
+      kickUser
     }),
-    [muted, roomId, connected, join, leave, speakingUsers, isSelfSpeaking, userCode, isManualCall, manualLeave, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, connectedPeers]
+    [muted, roomId, connected, join, leave, speakingUsers, isSelfSpeaking, userCode, isManualCall, manualLeave, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, connectedPeers, isHost]
   );
 
   useEffect(() => {

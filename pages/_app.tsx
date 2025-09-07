@@ -84,7 +84,7 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 				)}
 				{/* Main content with top padding to account for fixed title bar */}
 				<div className={isOverlay ? "" : "flex-1 pt-10"}>
-					<Component {...pageProps} />
+				<Component {...pageProps} />
 				</div>
 			</div>
 			{!isOverlay && <ToastContainer toasts={toasts} onRemove={removeToast} />}

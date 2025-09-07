@@ -511,7 +511,7 @@ export default function Settings() {
 							<div className="flex-1">
 								<h2 className="text-lg font-semibold text-white">Audio Devices</h2>
 								<p className="text-sm text-neutral-400">Configure your microphone and speakers</p>
-							</div>
+				</div>
 							<button
 								onClick={refreshDevices}
 								className="w-10 h-10 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 flex items-center justify-center transition-colors"
@@ -525,30 +525,30 @@ export default function Settings() {
 							<div className="space-y-4">
 								<div>
 									<label className="text-sm font-medium text-neutral-300 mb-2 block">Microphone</label>
-									<select
+						<select
 										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
-										value={selectedMic}
-										onChange={e => setSelectedMic(e.target.value)}
-									>
-										<option value="">System Default</option>
-										{mics.map(d => (
+							value={selectedMic}
+							onChange={e => setSelectedMic(e.target.value)}
+						>
+							<option value="">System Default</option>
+							{mics.map(d => (
 											<option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>
-										))}
-									</select>
-								</div>
+							))}
+						</select>
+						</div>
 
 								<div>
 									<label className="text-sm font-medium text-neutral-300 mb-2 block">Output Device</label>
-									<select
+						<select
 										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
-										value={selectedSpeaker}
-										onChange={e => setSelectedSpeaker(e.target.value)}
-									>
-										<option value="">System Default</option>
-										{speakers.map(d => (
-											<option key={d.deviceId} value={d.deviceId}>{d.label || 'Speakers'}</option>
-										))}
-									</select>
+							value={selectedSpeaker}
+							onChange={e => setSelectedSpeaker(e.target.value)}
+						>
+							<option value="">System Default</option>
+							{speakers.map(d => (
+								<option key={d.deviceId} value={d.deviceId}>{d.label || 'Speakers'}</option>
+							))}
+						</select>
 								</div>
 
 								<div className="flex gap-3">
@@ -572,8 +572,8 @@ export default function Settings() {
 								<div>
 									<label className="text-sm font-medium text-neutral-300 mb-2 block">Microphone Level</label>
 									<div className="h-3 bg-neutral-800/50 rounded-full overflow-hidden border border-neutral-700/50">
-										<div className="h-full bg-gradient-to-r from-violet-500 to-cyan-500 transition-[width] duration-100" style={{ width: `${Math.min(1, level * 4) * 100}%` }} />
-									</div>
+								<div className="h-full bg-gradient-to-r from-violet-500 to-cyan-500 transition-[width] duration-100" style={{ width: `${Math.min(1, level * 4) * 100}%` }} />
+							</div>
 									<p className="text-xs text-neutral-400 mt-1">Speak to test your microphone</p>
 								</div>
 
@@ -614,10 +614,10 @@ export default function Settings() {
 									</label>
 								</div>
 								{usePushToTalk && (
-									<input
+								<input
 										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors text-center font-mono"
-										value={pushToTalkKey}
-										onChange={e => setPushToTalkKey(e.target.value)}
+									value={pushToTalkKey}
+									onChange={e => setPushToTalkKey(e.target.value)}
 										placeholder="Enter key..."
 									/>
 								)}
@@ -721,7 +721,7 @@ export default function Settings() {
 									}}
 								/>
 								<p className="text-xs text-neutral-500">Lower = more sensitive, Higher = less sensitive</p>
-							</div>
+						</div>
 
 							<div className="flex gap-2 pt-2">
 								<button onClick={() => join()} disabled={!canJoin} className="flex-1 btn-primary px-4 py-2 rounded-xl disabled:opacity-50 text-sm font-medium">
@@ -759,7 +759,7 @@ export default function Settings() {
 									<input type="checkbox" checked={showOverlayPreview} onChange={e => setShowOverlayPreview(e.target.checked)} className="sr-only peer" />
 									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
 								</label>
-							</div>
+					</div>
 
 							<div>
 								<label className="text-sm font-medium text-neutral-300 mb-2 block">Position</label>
@@ -780,7 +780,7 @@ export default function Settings() {
 									<label className="text-sm font-medium text-neutral-300">Scale</label>
 									<span className="text-xs text-neutral-400 font-mono">{scale.toFixed(2)}x</span>
 								</div>
-								<input 
+									<input
 									type="range" 
 									min={0.75} 
 									max={1.5} 
@@ -805,8 +805,8 @@ export default function Settings() {
 							<div>
 								<h2 className="text-lg font-semibold text-white">App Updates</h2>
 								<p className="text-sm text-neutral-400">Keep HexCall up to date</p>
-							</div>
 						</div>
+					</div>
 
 						<div className="space-y-4">
 							<div className="flex flex-wrap gap-3">
@@ -988,9 +988,9 @@ export default function Settings() {
 							<div className="mt-3 pt-2 border-t border-neutral-700/30">
 								<div className="text-xs text-neutral-500 text-center">
 									Preview Mode • 5 participants
-								</div>
-							</div>
 						</div>
+					</div>
+				</div>
 					</div>
 				)}
 			</div>

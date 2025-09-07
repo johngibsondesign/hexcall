@@ -24,6 +24,7 @@ export type VoiceClientOptions = {
 export class VoiceClient {
 	private pc: RTCPeerConnection | null = null;
 	private peerConnections: Map<string, RTCPeerConnection> = new Map();
+	private pendingIceCandidates: Map<string, RTCIceCandidateInit[]> = new Map(); // Queue ICE candidates
 	private stream: MediaStream | null = null;
 	private signaling: SupabaseSignaling;
 	private remoteAudioEls: Map<string, HTMLAudioElement> = new Map();
@@ -44,6 +45,7 @@ export class VoiceClient {
 	private audioBuffer: Float32Array[] = [];
 	private maxBufferSize: number = 10; // Buffer up to 10 frames
 	private audioWorklet: AudioWorkletNode | null = null;
+	public onPeersChanged?: (ids: string[]) => void;
 
 	public setVadThreshold(threshold: number) {
 		this.vadThreshold = Math.max(0.001, Math.min(0.1, threshold));
@@ -405,6 +407,127 @@ export class VoiceClient {
 		];
 	}
 
+	private async createPeerConnection(peerId: string): Promise<RTCPeerConnection> {
+		const pc = new RTCPeerConnection({ 
+			iceServers: this.iceServers,
+			iceCandidatePoolSize: 10,
+			bundlePolicy: 'balanced',
+			rtcpMuxPolicy: 'require'
+		});
+
+		// Set up event handlers for this peer connection
+		pc.onicecandidate = (e) => {
+			if (e.candidate && !this.isDestroyed) {
+				this.signaling.send({ 
+					type: 'ice', 
+					from: this.opts.userId, 
+					to: peerId, 
+					candidate: e.candidate.toJSON() 
+				}).catch(err => this.handleError(new Error(`Failed to send ICE candidate to ${peerId}: ${err}`)));
+			}
+		};
+
+		pc.onconnectionstatechange = () => {
+			if (!pc || this.isDestroyed) return;
+			
+			const state = pc.connectionState;
+			console.log(`[VoiceClient] Connection state with ${peerId} changed to: ${state}`);
+			
+			// Update overall connection state based on any connected peer
+			const hasConnectedPeer = Array.from(this.peerConnections.values())
+				.some(peerPc => peerPc.connectionState === 'connected');
+			
+			if (hasConnectedPeer) {
+				this.updateConnectionState('connected');
+				this.reconnectAttempts = 0;
+				this.reconnectDelay = 1000;
+				this.startStatsMonitoring();
+			} else if (state === 'failed' || state === 'disconnected') {
+				// Clean up failed connection
+				this.peerConnections.delete(peerId);
+				this.remoteAudioEls.get(peerId)?.remove();
+				this.remoteAudioEls.delete(peerId);
+				this.remoteAnalysers.delete(peerId);
+				this.onPeersChanged?.(Array.from(this.peerConnections.keys()));
+				
+				// If no peers left, update connection state
+				if (this.peerConnections.size === 0) {
+					this.updateConnectionState('disconnected');
+				}
+			}
+		};
+
+		pc.ontrack = (e) => {
+			if (this.isDestroyed) return;
+			console.log(`[VoiceClient] Received remote track from ${peerId}:`, e.track.kind);
+			
+			const [stream] = e.streams;
+			if (stream && e.track.kind === 'audio') {
+				// Create audio element for remote stream
+				const audio = new Audio();
+				audio.srcObject = stream;
+				audio.autoplay = true;
+				audio.volume = this.userVolumes.get(peerId) || 0.8;
+				
+				// Store reference for cleanup
+				this.remoteAudioEls.set(peerId, audio);
+				
+				// Set up remote audio analysis
+				this.setupRemoteAudioAnalysis(peerId, stream);
+			}
+		};
+
+		// Add local stream to this peer connection
+		if (this.stream) {
+			this.stream.getTracks().forEach(track => {
+				pc.addTrack(track, this.stream!);
+			});
+		}
+
+		return pc;
+	}
+
+	private async processPendingIceCandidates(peerId: string) {
+		const pc = this.peerConnections.get(peerId);
+		const pendingCandidates = this.pendingIceCandidates.get(peerId);
+		
+		if (pc && pc.remoteDescription && pendingCandidates) {
+			console.log(`[VoiceClient] Processing ${pendingCandidates.length} pending ICE candidates for ${peerId}`);
+			
+			for (const candidate of pendingCandidates) {
+				try {
+					await pc.addIceCandidate(new RTCIceCandidate(candidate));
+				} catch (error) {
+					console.warn(`[VoiceClient] Failed to add pending ICE candidate for ${peerId}:`, error);
+				}
+			}
+			
+			// Clear pending candidates
+			this.pendingIceCandidates.delete(peerId);
+		}
+	}
+
+	private async handleNewPeer(peerId: string) {
+		if (this.peerConnections.has(peerId) || peerId === this.opts.userId) return;
+		
+		console.log(`[VoiceClient] Handling new peer: ${peerId}`);
+		
+		try {
+			const pc = await this.createPeerConnection(peerId);
+			this.peerConnections.set(peerId, pc);
+			this.onPeersChanged?.(Array.from(this.peerConnections.keys()));
+			
+			// Create and send offer to new peer
+			const offer = await pc.createOffer({ offerToReceiveAudio: true });
+			await pc.setLocalDescription(offer);
+			await this.signaling.send({ type: 'offer', from: this.opts.userId, to: peerId, sdp: offer });
+			
+			console.log(`[VoiceClient] Sent offer to ${peerId}`);
+		} catch (error) {
+			console.error(`[VoiceClient] Failed to handle new peer ${peerId}:`, error);
+		}
+	}
+
 	async init() {
 		try {
 			console.log('[VoiceClient] Initializing signaling for room:', this.opts.roomId);
@@ -412,7 +535,15 @@ export class VoiceClient {
 			await this.signaling.presence((peers) => {
 				console.log('[VoiceClient] Presence update received:', peers);
 				this.onPresenceUpdate?.(peers);
-			}, { userId: this.opts.userId });
+				
+				// Handle new peers - create connections to peers that joined after us
+				peers.forEach(peer => {
+					if (peer.id !== this.opts.userId && peer.id > this.opts.userId) {
+						// Only initiate connection if our ID is lexicographically smaller (prevents duplicate connections)
+						this.handleNewPeer(peer.id);
+					}
+				});
+			}, { userId: this.opts.userId, connected: true });
 			console.log('[VoiceClient] Signaling initialized successfully');
 		} catch (error) {
 			console.error('[VoiceClient] Failed to initialize signaling:', error);
@@ -573,129 +704,25 @@ export class VoiceClient {
 			this.updateConnectionState('connecting');
 			this.clearReconnectTimer();
 
-			// Create peer connection with enhanced configuration
-			this.pc = new RTCPeerConnection({ 
-				iceServers: this.iceServers,
-				iceCandidatePoolSize: 10,
-				bundlePolicy: 'balanced',
-				rtcpMuxPolicy: 'require'
-			});
-
-			// Set up event handlers
-			this.pc.onicecandidate = (e) => {
-				if (e.candidate && !this.isDestroyed) {
-					this.signaling.send({ 
-						type: 'ice', 
-						from: this.opts.userId, 
-						to: '*', 
-						candidate: e.candidate.toJSON() 
-					}).catch(err => this.handleError(new Error(`Failed to send ICE candidate: ${err}`)));
-				}
-			};
-
-			this.pc.onconnectionstatechange = () => {
-				if (!this.pc || this.isDestroyed) return;
-				
-				const state = this.pc.connectionState;
-				console.log(`[VoiceClient] Connection state changed to: ${state}`);
-				
-				switch (state) {
-					case 'connected':
-						this.updateConnectionState('connected');
-						this.reconnectAttempts = 0; // Reset on successful connection
-						this.reconnectDelay = 1000; // Reset delay
-						this.startStatsMonitoring(); // Start collecting stats when connected
-						break;
-					case 'disconnected':
-						this.updateConnectionState('disconnected');
-						this.tryReconnect();
-						break;
-					case 'failed':
-						this.updateConnectionState('failed');
-						this.tryReconnect();
-						break;
-					case 'connecting':
-						this.updateConnectionState('connecting');
-						break;
-				}
-			};
-
-			this.pc.onicegatheringstatechange = () => {
-				if (this.pc) {
-					console.log(`[VoiceClient] ICE gathering state: ${this.pc.iceGatheringState}`);
-				}
-			};
-
-			this.pc.oniceconnectionstatechange = () => {
-				if (this.pc) {
-					console.log(`[VoiceClient] ICE connection state: ${this.pc.iceConnectionState}`);
-				}
-			};
-
-			this.pc.ontrack = (e) => {
-				if (this.isDestroyed) return;
-				
-				try {
-					const [stream] = e.streams;
-					const el = new Audio();
-					el.srcObject = stream;
-					el.autoplay = true;
-					
-					// Extract user ID from track or generate one
-					const userId = e.track.id || `remote-${Date.now()}`;
-					
-					// Apply saved volume for this user
-					el.volume = this.getUserVolume(userId);
-					
-					this.remoteAudioEls.set(userId, el);
-					
-					// Set up remote audio analysis for speaking detection
-					this.setupRemoteAudioAnalysis(userId, stream);
-					
-					console.log(`[VoiceClient] Added remote track for user: ${userId}`);
-				} catch (error) {
-					this.handleError(new Error(`Failed to handle remote track: ${error}`));
-				}
-			};
-
 			// Get user media with error handling
-			try {
-				const saved = typeof window !== 'undefined' ? {
-					echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
-					noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
-					autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
-				} : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+			const saved = typeof window !== 'undefined' ? {
+				echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
+				noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
+				autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
+			} : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
-				const audioConstraints: any = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
-				audioConstraints.echoCancellation = saved.echoCancellation;
-				audioConstraints.noiseSuppression = saved.noiseSuppression;
-				audioConstraints.autoGainControl = saved.autoGainControl;
+			const audioConstraints: any = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
+			audioConstraints.echoCancellation = saved.echoCancellation;
+			audioConstraints.noiseSuppression = saved.noiseSuppression;
+			audioConstraints.autoGainControl = saved.autoGainControl;
 
-				this.stream = await navigator.mediaDevices.getUserMedia({ 
-					audio: Object.keys(audioConstraints).length ? audioConstraints : true 
-				});
-				
-				this.setupVuMeter(this.stream);
-				this.stream.getAudioTracks().forEach((track) => {
-					if (this.pc && !this.isDestroyed) {
-						this.pc.addTrack(track, this.stream!);
-					}
-				});
-			} catch (error) {
-				throw new Error(`Failed to get user media: ${error}`);
-			}
-
-			// Create and send offer
-			try {
-				const offer = await this.pc.createOffer({ offerToReceiveAudio: true });
-				await this.pc.setLocalDescription(offer);
-				await this.signaling.send({ type: 'offer', from: this.opts.userId, to: '*', sdp: offer });
-				
-				console.log('[VoiceClient] Offer created and sent successfully');
-			} catch (error) {
-				throw new Error(`Failed to create or send offer: ${error}`);
-			}
-
+			this.stream = await navigator.mediaDevices.getUserMedia({ 
+				audio: Object.keys(audioConstraints).length ? audioConstraints : true 
+			});
+			
+			this.setupVuMeter(this.stream);
+			
+			console.log('[VoiceClient] Successfully joined room, waiting for peers...');
 		} catch (error) {
 			this.updateConnectionState('failed');
 			this.handleError(error instanceof Error ? error : new Error(String(error)));
@@ -718,7 +745,7 @@ export class VoiceClient {
 	}
 
 	private onSignal = async (msg: SignalMessage) => {
-		if (!this.pc || this.isDestroyed) return;
+		if (this.isDestroyed) return;
 		
 		// Ignore messages from self
 		if (msg.from === this.opts.userId) return;
@@ -728,9 +755,43 @@ export class VoiceClient {
 		try {
 			switch (msg.type) {
 				case 'offer': {
-					await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-					const answer = await this.pc.createAnswer();
-					await this.pc.setLocalDescription(answer);
+					// Get or create peer connection for this peer
+					let pc = this.peerConnections.get(msg.from);
+					if (!pc) {
+						pc = await this.createPeerConnection(msg.from);
+						this.peerConnections.set(msg.from, pc);
+						// Notify UI that a new peer connection exists (so participants list updates)
+						this.onPeersChanged?.(Array.from(this.peerConnections.keys()));
+					}
+					
+					// Handle offer collision - if we're in wrong state, reset the connection
+					if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+						console.log(`[VoiceClient] Offer collision detected with ${msg.from}, resetting connection`);
+						pc.close();
+						pc = await this.createPeerConnection(msg.from);
+						this.peerConnections.set(msg.from, pc);
+					}
+					
+					// If we have a local offer and this is an offer collision, decide who wins
+					if (pc.signalingState === 'have-local-offer') {
+						// Use lexicographic comparison to decide who wins
+						if (msg.from > this.opts.userId) {
+							// Remote wins, we become answerer
+							console.log(`[VoiceClient] Offer collision: remote wins, becoming answerer for ${msg.from}`);
+						} else {
+							// We win, ignore remote offer
+							console.log(`[VoiceClient] Offer collision: we win, ignoring offer from ${msg.from}`);
+							return;
+						}
+					}
+					
+					await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+					
+					// Process any pending ICE candidates now that we have remote description
+					await this.processPendingIceCandidates(msg.from);
+					
+					const answer = await pc.createAnswer();
+					await pc.setLocalDescription(answer);
 					await this.signaling.send({ type: 'answer', from: this.opts.userId, to: msg.from, sdp: answer });
 					console.log(`[VoiceClient] Sent answer to ${msg.from}`);
 					break;
@@ -738,15 +799,36 @@ export class VoiceClient {
 				case 'answer': {
 					// Only process answers meant for us
 					if (msg.to !== this.opts.userId) return;
-					await this.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-					console.log(`[VoiceClient] Processed answer from ${msg.from}`);
+					
+					const pc = this.peerConnections.get(msg.from);
+					if (pc) {
+						await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+						
+						// Process any pending ICE candidates now that we have remote description
+						await this.processPendingIceCandidates(msg.from);
+						
+						console.log(`[VoiceClient] Processed answer from ${msg.from}`);
+					} else {
+						console.warn(`[VoiceClient] No peer connection found for answer from ${msg.from}`);
+					}
 					break;
 				}
 				case 'ice': {
 					// Only process ICE candidates meant for us or broadcast to all
 					if (msg.to !== this.opts.userId && msg.to !== '*') return;
-					await this.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-					console.log(`[VoiceClient] Added ICE candidate from ${msg.from}`);
+					
+					const pc = this.peerConnections.get(msg.from);
+					if (pc && pc.remoteDescription) {
+						await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+						console.log(`[VoiceClient] Added ICE candidate from ${msg.from}`);
+					} else {
+						// Queue ICE candidate for later processing
+						if (!this.pendingIceCandidates.has(msg.from)) {
+							this.pendingIceCandidates.set(msg.from, []);
+						}
+						this.pendingIceCandidates.get(msg.from)!.push(msg.candidate);
+						console.log(`[VoiceClient] Queued ICE candidate from ${msg.from} (no remote description yet)`);
+					}
 					break;
 				}
 			}
@@ -820,7 +902,17 @@ export class VoiceClient {
 			this.stream = null;
 		}
 		
-		// Close peer connection
+		// Close all peer connections
+		this.peerConnections.forEach((pc, peerId) => {
+			pc.close();
+			console.log(`[VoiceClient] Closed peer connection to ${peerId}`);
+		});
+		this.peerConnections.clear();
+		
+		// Clear pending ICE candidates
+		this.pendingIceCandidates.clear();
+		
+		// Close legacy single peer connection if it exists
 		if (this.pc) {
 			this.pc.close();
 			this.pc = null;
