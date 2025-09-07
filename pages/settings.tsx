@@ -30,7 +30,7 @@ export default function Settings() {
 	const [showOverlayPreview, setShowOverlayPreview] = useState(false);
 	
 	// Update-related state
-	const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'none'>('idle');
+	const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'none'>('idle');
 	const [updateInfo, setUpdateInfo] = useState<any>(null);
 	const [downloadProgress, setDownloadProgress] = useState(0);
 
