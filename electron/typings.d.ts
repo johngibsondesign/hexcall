@@ -19,6 +19,9 @@ declare global {
 			updatesCheck?: () => void;
 			updatesDownload?: () => void;
 			updatesQuitAndInstall?: () => void;
+			setAutoStart?: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+			showOverlay?: () => Promise<{ success: boolean; error?: string }>;
+			hideOverlay?: () => Promise<{ success: boolean; error?: string }>;
 			onUpdateAvailable?: (cb: (info: any) => void) => () => void;
 			onUpdateNone?: (cb: (info: any) => void) => () => void;
 			onUpdateProgress?: (cb: (p: any) => void) => () => void;

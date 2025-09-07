@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useVoiceRoom } from '../hooks/useVoiceRoom';
+import { cacheSummonerData, getCachedSummonerData, getCachedDisplayName, getCachedFullDisplayName, getCachedIconUrl, updateGameState } from '../lib/summonerCache';
 
 type VoiceContextValue = {
   muted: boolean;
@@ -19,7 +20,7 @@ type VoiceContextValue = {
   connectionStats?: import('../modules/webrtc/voiceClient').ConnectionStats | null;
   joinByCode?: (code: string) => Promise<void> | void;
   createManualCall?: () => Promise<string> | string;
-  connectedPeers?: Array<{id: string, name?: string}>;
+  connectedPeers?: Array<{id: string, name?: string, riotId?: string, iconUrl?: string, isSelf?: boolean}>;
 };
 
 const VoiceContext = createContext<VoiceContextValue>({ muted: false, setMuted: () => {} });
@@ -85,6 +86,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [roomId, setRoomId] = useState<string | undefined>(undefined);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [isManualCall, setIsManualCall] = useState(false);
+  const [currentGamePhase, setCurrentGamePhase] = useState<string>('Unknown');
   const userId = useMemo(() => 'local-' + getStableUserId(), []);
   const [userCode, setUserCode] = useState<string>('DEMO01');
 
@@ -97,10 +99,42 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
+      const phase = payload?.phase || 'Unknown';
+      setCurrentGamePhase(phase);
+      
+      // Find current player's champion data from session
+      let playerChampionName: string | undefined;
+      let playerChampionId: number | undefined;
+      
+      if (payload?.session?.gameData?.playerChampionSelections && payload?.self?.puuid) {
+        const playerSelection = payload.session.gameData.playerChampionSelections.find(
+          (p: any) => p.puuid === payload.self.puuid
+        );
+        if (playerSelection) {
+          playerChampionName = playerSelection.championName;
+          playerChampionId = playerSelection.championId;
+        }
+      }
+
+      // Cache summoner data when available
+      if (payload?.self && (payload.self.summonerName || payload.self.gameName)) {
+        cacheSummonerData({
+          summonerName: payload.self.summonerName,
+          gameName: payload.self.gameName,
+          tagLine: payload.self.tagLine,
+          profileIconId: payload.self.profileIconId,
+          puuid: payload.self.puuid,
+          summonerId: payload.self.summonerId,
+          accountId: payload.self.accountId
+        });
+      }
+
+      // Update game state in cache (for icon switching)
+      updateGameState(phase, playerChampionName, playerChampionId);
+
       // Don't interfere with manual calls
       if (isManualCall) return;
 
-      const phase = payload?.phase;
       const members: any[] = Array.isArray(payload?.members) ? payload.members : [];
       const newRoom = deriveRoomId(payload);
 
@@ -186,8 +220,35 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connectedPeers = useMemo(() => {
-    return (peerIds || []).filter(id => id !== userId).map(id => ({ id, name: id.includes('local-') ? 'User' : id.slice(0, 8) }));
-  }, [peerIds, userId]);
+    const peers = [];
+    
+    // Add yourself first if connected
+    if (connected) {
+      const { name: selfName, riotId } = getCachedFullDisplayName();
+      const selfIconUrl = getCachedIconUrl(currentGamePhase); // Use phase-aware icon
+      
+      peers.push({
+        id: userId,
+        name: selfName,
+        riotId: riotId,
+        iconUrl: selfIconUrl,
+        isSelf: true
+      });
+    }
+    
+    // Add other peers
+    const otherPeers = (peerIds || [])
+      .filter(id => id !== userId)
+      .map(id => ({ 
+        id, 
+        name: id.includes('local-') ? 'User' : id.slice(0, 8),
+        riotId: undefined,
+        isSelf: false
+      }));
+    
+    peers.push(...otherPeers);
+    return peers;
+  }, [peerIds, userId, connected, currentGamePhase]);
 
   const value = useMemo(
     () => ({ 
@@ -245,6 +306,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     return () => off?.();
   }, [setPushToTalkActive]);
+
+  // Show/hide overlay based on voice call connection
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (connected) {
+      window.hexcall?.showOverlay?.();
+    } else {
+      window.hexcall?.hideOverlay?.();
+    }
+  }, [connected]);
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }

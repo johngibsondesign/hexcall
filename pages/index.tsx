@@ -12,7 +12,10 @@ import {
 	FaUsers,
 	FaCopy,
 	FaPlus,
-	FaQuestion
+	FaQuestion,
+	FaVolumeHigh,
+	FaVolumeLow,
+	FaVolumeXmark
 } from 'react-icons/fa6';
 import { RoleIcon } from '../components/RoleIcon';
 import { ChampionIconWithPreview } from '../components/ChampionIcon';
@@ -23,12 +26,14 @@ import { OnboardingWizard } from '../components/OnboardingWizard';
 import { VoiceControlPanel } from '../components/VoiceControlPanel';
 import { SetupStatusCard } from '../components/SetupStatusCard';
 import { QuickStartGuide } from '../components/QuickStartGuide';
+import { HoverVolumeControl } from '../components/HoverVolumeControl';
 
 interface Teammate {
 	summonerName?: string;
 	gameName?: string;
 	name?: string;
 	puuid?: string;
+	summonerId?: string;
 	championName?: string;
 	championId?: number;
 	profileIconId?: number;
@@ -66,6 +71,15 @@ export default function Home() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
 	const [showQuickStart, setShowQuickStart] = useState(false);
+	const [participantJoinTimes, setParticipantJoinTimes] = useState<Record<string, number>>({});
+	const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
+	const [availableLeagueCall, setAvailableLeagueCall] = useState<{roomId: string; memberCount: number} | null>(null);
+	const [showCallSwitchModal, setShowCallSwitchModal] = useState(false);
+	const [switchCountdown, setSwitchCountdown] = useState(10);
+	const [deafened, setDeafened] = useState(false);
+	const [masterVolume, setMasterVolume] = useState(1.0);
+	const [microphoneGain, setMicrophoneGain] = useState(1.0);
+	const [autoJoinEnabled, setAutoJoinEnabled] = useState(true);
 
 	// Load push-to-talk settings and check onboarding
 	useEffect(() => {
@@ -77,6 +91,19 @@ export default function Home() {
 				setPushToTalkKey(pttSettings.key || 'CapsLock');
 			}
 			
+			// Load volume settings
+			const savedVolume = localStorage.getItem('hexcall-volume-settings');
+			if (savedVolume) {
+				const volumeSettings = JSON.parse(savedVolume);
+				setMasterVolume(volumeSettings.masterVolume ?? 1.0);
+				setMicrophoneGain(volumeSettings.microphoneGain ?? 1.0);
+				setDeafened(volumeSettings.deafened ?? false);
+			}
+
+			// Load auto-join setting
+			const autoJoin = localStorage.getItem('hexcall-auto-join');
+			setAutoJoinEnabled(autoJoin !== '0'); // Default to enabled unless explicitly disabled
+			
 			// Check if user has seen onboarding
 			const seenOnboarding = localStorage.getItem('hexcall-onboarding-seen');
 			if (!seenOnboarding) {
@@ -86,6 +113,18 @@ export default function Home() {
 			}
 		} catch {}
 	}, []);
+
+	// Save volume settings when they change
+	useEffect(() => {
+		try {
+			const volumeSettings = {
+				masterVolume,
+				microphoneGain,
+				deafened
+			};
+			localStorage.setItem('hexcall-volume-settings', JSON.stringify(volumeSettings));
+		} catch {}
+	}, [masterVolume, microphoneGain, deafened]);
 
 	useEffect(() => {
 		const off = window.hexcall?.onLcuUpdate?.((payload: {
@@ -139,15 +178,110 @@ export default function Home() {
 									return (a.summonerName || a.gameName || '').localeCompare(b.summonerName || b.gameName || '');
 								});
 								
-							setTeammates(sortedMembers.slice(0, 5)); // Limit to 5 teammates
+			setTeammates(sortedMembers.slice(0, 5));
+
+			// Check if League game call is available while in manual call
+			const isInManualCall = joinedRoomId?.startsWith('manual-');
+			const allowedPhases = ['Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress', 'Lobby'];
+			
+			if (isInManualCall && allowedPhases.includes(phase) && members.length >= 2) {
+				// Derive what the League room ID would be
+				const leagueRoomId = members.map(m => m.puuid || m.summonerId || '').filter(Boolean).sort().join('-').slice(0, 32);
+				
+				if (leagueRoomId && leagueRoomId !== joinedRoomId) {
+					setAvailableLeagueCall({
+						roomId: leagueRoomId,
+						memberCount: members.length
+					});
+					
+					// Show notification modal
+					if (!showCallSwitchModal) {
+						setShowCallSwitchModal(true);
+						setSwitchCountdown(10);
+					}
+				}
+			} else {
+				// Clear available League call if conditions not met
+				setAvailableLeagueCall(null);
+			}
 		});
 		return () => { off && off(); };
-	}, []);
+	}, [showCallSwitchModal]);
 
 	const inLobbyOrGame = useMemo(() => {
 		const phase = typeof gamePhase === 'string' ? gamePhase : '';
 		return ['Matchmaking','ReadyCheck','ChampSelect','Lobby','InProgress'].includes(phase);
 	}, [gamePhase]);
+
+	// Track participant join times
+	useEffect(() => {
+		if (!connectedPeers) return;
+		
+		const currentTime = Date.now();
+		const currentPeerIds = new Set(connectedPeers.map(p => p.id));
+		
+		setParticipantJoinTimes(prev => {
+			const updated = { ...prev };
+			
+			// Add join times for new participants
+			connectedPeers.forEach(peer => {
+				if (!updated[peer.id]) {
+					updated[peer.id] = currentTime;
+				}
+			});
+			
+			// Remove times for participants who left
+			Object.keys(updated).forEach(peerId => {
+				if (!currentPeerIds.has(peerId)) {
+					delete updated[peerId];
+				}
+			});
+			
+			return updated;
+		});
+	}, [connectedPeers]);
+
+	// Update call durations every 30 seconds
+	useEffect(() => {
+		if (!connected || !connectedPeers?.length) return;
+		
+		const interval = setInterval(() => {
+			// Force re-render to update durations
+			setParticipantJoinTimes(prev => ({ ...prev }));
+		}, 30000);
+		
+		return () => clearInterval(interval);
+	}, [connected, connectedPeers?.length]);
+
+	// Close participant selection when clicking outside
+	useEffect(() => {
+		const handleClickOutside = (e: MouseEvent) => {
+			if (selectedParticipant && !(e.target as Element)?.closest('.participant-card')) {
+				setSelectedParticipant(null);
+			}
+		};
+		
+		document.addEventListener('click', handleClickOutside);
+		return () => document.removeEventListener('click', handleClickOutside);
+	}, [selectedParticipant]);
+
+	// Handle call switch modal countdown
+	useEffect(() => {
+		if (!showCallSwitchModal) return;
+		
+		if (switchCountdown <= 0) {
+			// Auto-dismiss and stay in current call
+			setShowCallSwitchModal(false);
+			setSwitchCountdown(10);
+			return;
+		}
+		
+		const timer = setTimeout(() => {
+			setSwitchCountdown(prev => prev - 1);
+		}, 1000);
+		
+		return () => clearTimeout(timer);
+	}, [showCallSwitchModal, switchCountdown]);
 
 	const getGameStateColor = (state: string) => {
 		const safeState = typeof state === 'string' ? state : '';
@@ -155,6 +289,20 @@ export default function Home() {
 		if (safeState.includes('Ready') || safeState.includes('Game')) return 'text-green-400';
 		if (safeState.includes('Not Running')) return 'text-red-400';
 		return 'text-blue-400';
+	};
+
+	const formatCallDuration = (joinTime: number): string => {
+		const now = Date.now();
+		const duration = Math.floor((now - joinTime) / 1000);
+		
+		if (duration < 60) return `${duration}s`;
+		
+		const minutes = Math.floor(duration / 60);
+		if (minutes < 60) return `${minutes}m`;
+		
+		const hours = Math.floor(minutes / 60);
+		const remainingMinutes = minutes % 60;
+		return `${hours}h ${remainingMinutes}m`;
 	};
 
 	const copyUserCode = async () => {
@@ -204,8 +352,54 @@ export default function Home() {
 		localStorage.setItem('hexcall-onboarding-seen', 'true');
 	};
 
+	const handleJoinLeagueCall = async () => {
+		setShowCallSwitchModal(false);
+		setSwitchCountdown(10);
+		
+		// Leave current manual call and join League call
+		try {
+			await leaveCall?.();
+			// The VoiceProvider will automatically join the League call
+			// since we're no longer in a manual call
+		} catch (error) {
+			console.error('Failed to switch to League call:', error);
+		}
+	};
+
+	const handleStayInManualCall = () => {
+		setShowCallSwitchModal(false);
+		setSwitchCountdown(10);
+		// Just close the modal, stay in current call
+	};
+
+	const handleDeafenToggle = () => {
+		setDeafened(!deafened);
+		// When deafening, also mute microphone
+		if (!deafened) {
+			setMuted?.(true);
+		}
+	};
+
+	const handleMasterVolumeChange = (volume: number) => {
+		setMasterVolume(volume);
+		// Apply to all connected peers
+		if (connectedPeers) {
+			connectedPeers.forEach(peer => {
+				if (!peer.isSelf) {
+					setUserVolume?.(peer.id, volume);
+				}
+			});
+		}
+	};
+
+	const handleMicrophoneGainChange = (gain: number) => {
+		setMicrophoneGain(gain);
+		// This would need to be implemented in the voice provider
+		// For now, we'll just store the value
+	};
+
 	return (
-		<div className="min-h-screen bg-hextech flex flex-col">
+		<div className={`bg-hextech flex flex-col h-full ${connected && joinedRoomId ? 'pb-16' : ''}`}>
 			<Head>
 				<title>Hexcall - League Voice Chat</title>
 			</Head>
@@ -236,6 +430,18 @@ export default function Home() {
 				</div>
 				
 				<div className="flex items-center gap-2">
+					{/* League Call Available Indicator */}
+					{availableLeagueCall && joinedRoomId?.startsWith('manual-') && (
+						<button
+							onClick={handleJoinLeagueCall}
+							className="px-3 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 transition-colors flex items-center gap-2 text-sm"
+							title="League game call available"
+						>
+							<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+							<span>League Call ({availableLeagueCall.memberCount})</span>
+						</button>
+					)}
+					
 					<button
 						onClick={() => setShowQuickStart(true)}
 						className="p-2 rounded-lg hover:bg-white/10 transition-colors"
@@ -251,180 +457,266 @@ export default function Home() {
 
 			{/* Main Content */}
 			<main className="flex-1 flex flex-col">
-				{/* Call Interface */}
 				{connected && joinedRoomId ? (
-					<div className="flex-1 flex flex-col">
-						{/* Call Header */}
-						<div className="px-6 py-4 border-b border-white/10">
-							<div className="flex items-center justify-between">
+					/* Active Call Interface */
+					<div className="flex-1 p-6">
+						<div className="max-w-6xl mx-auto">
+							{/* Section Header */}
+							<div className="flex items-center justify-between mb-6">
+								<div className="flex items-center gap-3">
+									<div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center">
+										<FaUsers className="w-4 h-4 text-white" />
+									</div>
 								<div>
-									<h2 className="text-lg font-semibold text-white">Voice Call Active</h2>
-									<p className="text-sm text-neutral-400">Room: {joinedRoomId}</p>
+										<h3 className="text-lg font-semibold text-white">Voice Chat</h3>
+										<p className="text-sm text-neutral-400">{(connectedPeers || []).length} participants connected</p>
+									</div>
 								</div>
-								<div className="flex items-center gap-2">
-									<div className="flex items-center gap-1 text-sm text-green-400">
+								<div className="flex items-center gap-2 text-sm text-neutral-400">
 										<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-										Connected
-							</div>
+									<span>Active call</span>
 								</div>
 							</div>
+
+							{/* Participants Grid */}
+							<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+								{(connectedPeers || []).map((peer, idx) => {
+									const isSpeaking = peer.isSelf ? isSelfSpeaking : speakingUsers?.has(peer.id);
+									const isYou = peer.isSelf;
+									const isMutedSelf = isYou && muted;
+									const joinTime = participantJoinTimes[peer.id];
+									const isSelected = selectedParticipant === peer.id;
+									
+									// Format display name
+									const displayName = peer.riotId || peer.name || peer.id.slice(0, 8);
+									
+									return (
+										<div key={peer.id} className={`participant-card group relative`}>
+											{/* Main Card */}
+											<div className={`
+												bg-gradient-to-br from-neutral-800/50 to-neutral-900/50 backdrop-blur-sm
+												border border-neutral-700/50 rounded-2xl p-4 h-full
+												transition-all duration-300 cursor-pointer
+												hover:border-neutral-600/50 hover:shadow-lg hover:shadow-neutral-900/20
+												${isYou ? 'ring-1 ring-violet-500/30 bg-gradient-to-br from-violet-900/20 to-neutral-900/50' : ''}
+												${isSelected ? 'ring-2 ring-blue-400/50 shadow-lg shadow-blue-400/10' : ''}
+												${isSpeaking ? 'ring-2 ring-green-400/50 shadow-lg shadow-green-400/10' : ''}
+												${isMutedSelf ? 'ring-2 ring-red-400/50 shadow-lg shadow-red-400/10' : ''}
+											`}
+											onClick={() => setSelectedParticipant(isSelected ? null : peer.id)}
+											>
+												{/* Status Indicator */}
+												<div className="absolute top-3 right-3">
+													{isMutedSelf ? (
+														<div className="w-2 h-2 bg-red-400 rounded-full animate-pulse" title="Muted" />
+													) : isSpeaking ? (
+														<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" title="Speaking" />
+													) : (
+														<div className="w-2 h-2 bg-neutral-500 rounded-full" title="Connected" />
+													)}
 						</div>
 
-						{/* Teammates Grid */}
-						<div className="flex-1 p-6">
-							<div className="max-w-4xl mx-auto">
-								<h3 className="text-sm font-medium text-neutral-300 mb-4 flex items-center gap-2">
-									<FaUsers />
-									Voice Chat ({(connectedPeers || []).length}/5)
-								</h3>
-								<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-									{(connectedPeers || []).map((peer, idx) => {
-										const isSpeaking = speakingUsers?.has(peer.id);
-										// For voice peers, we don't have role info, so show generic
-										return (
-											<div key={peer.id} className="glass rounded-xl p-4 text-center relative">
-												<div className={`w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden flex items-center justify-center ring-2 transition-all ${
-													isSpeaking 
-														? 'ring-green-400 shadow-lg shadow-green-400/25 animate-pulse' 
-														: 'ring-white/20'
-												} bg-neutral-700`}>
-													<FaUsers className="w-8 h-8 text-neutral-400" />
+												{/* Avatar */}
+												<div className="flex justify-center mb-4">
+													<div className={`
+														relative w-20 h-20 rounded-2xl overflow-hidden
+														transition-all duration-300
+														${isMutedSelf ? 'ring-2 ring-red-400/50' : ''}
+														${isSpeaking ? 'ring-2 ring-green-400/50' : ''}
+														${!isSpeaking && !isMutedSelf ? 'ring-1 ring-neutral-600/30' : ''}
+													`}>
+														{peer.iconUrl ? (
+															<img 
+																src={peer.iconUrl} 
+																alt={displayName} 
+																className="w-full h-full object-cover"
+																onError={(e) => {
+																	const target = e.target as HTMLImageElement;
+																	target.style.display = 'none';
+																	const fallback = target.nextElementSibling as HTMLElement;
+																	if (fallback) fallback.style.display = 'flex';
+																}}
+															/>
+														) : null}
+														<div className={`
+															w-full h-full bg-gradient-to-br from-neutral-600 to-neutral-700 
+															flex items-center justify-center
+															${peer.iconUrl ? 'hidden' : 'flex'}
+														`}>
+															<FaUsers className="w-8 h-8 text-neutral-300" />
+														</div>
+													</div>
 												</div>
-												<div className="text-sm font-medium text-white truncate">{peer.name || peer.id.slice(0, 8)}</div>
-												<div className="text-xs text-neutral-400">Connected</div>
-												
-												{/* Volume Control */}
-												<div className="mt-3 w-full">
+
+												{/* User Info */}
+												<div className="text-center space-y-2">
+													{/* Name */}
+													<div className="space-y-1">
+														<div className="font-semibold text-white text-sm truncate">
+															{displayName}
+															{isYou && <span className="text-violet-400 ml-1 font-normal">(You)</span>}
+														</div>
+														
+														{/* Connection Duration */}
+														<div className="text-xs text-neutral-400">
+															Connected: {joinTime ? formatCallDuration(joinTime) : '0s'}
+														</div>
+													</div>
+
+													{/* Volume Control - Show when selected and not you */}
+													{!isYou && isSelected && (
+														<div className="pt-3 border-t border-neutral-700/50">
+															<div className="space-y-2">
+																<div className="text-xs text-neutral-400 font-medium">Volume Control</div>
 													<VolumeSlider
 														userId={peer.id}
 														initialVolume={getUserVolume?.(peer.id) ?? 1.0}
 														onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
 														size="sm"
 													/>
+															</div>
+														</div>
+													)}
 												</div>
 												
-												{isSpeaking && (
-													<div className="mt-2 text-xs text-green-400 flex items-center justify-center gap-1">
-														<FaMicrophone className="animate-pulse" />
-														Speaking
-													</div>
+												{/* Hover Overlay */}
+												{!isYou && (
+													<div className="absolute inset-0 bg-blue-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 												)}
+											</div>
 											</div>
 										);
 									})}
+						</div>
+
+							{/* Empty State */}
+							{(!connectedPeers || connectedPeers.length === 0) && (
+								<div className="text-center py-12">
+									<div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-800 flex items-center justify-center">
+										<FaUsers className="w-8 h-8 text-neutral-400" />
+						</div>
+									<h4 className="text-lg font-medium text-white mb-2">No participants yet</h4>
+									<p className="text-neutral-400">Waiting for others to join the call...</p>
+					</div>
+							)}
+						</div>
+					</div>
+				) : (
+					/* Split Homepage Layout */
+					<div className="flex-1 flex">
+						{/* Left Half - Manual Calls */}
+						<div className="flex-1 flex items-center justify-center border-r border-white/10">
+							<div className="text-center max-w-sm mx-auto px-6 py-12">
+								<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center">
+									<FaPlus className="w-8 h-8 text-white" />
+								</div>
+								<h2 className="text-xl font-bold text-white mb-3">Manual Calls</h2>
+								<p className="text-neutral-400 text-sm mb-6">Create or join a call with friends using a code</p>
+								
+								<div className="space-y-3 mb-6">
+									<button
+										onClick={handleCreateManualCall}
+										className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform"
+									>
+										<FaPlus className="w-4 h-4" />
+										Start Manual Call
+									</button>
+									
+									<button
+										onClick={() => setShowJoinModal(true)}
+										className="w-full px-6 py-3 rounded-xl chip hover:bg-white/10 border border-white/10 font-semibold flex items-center justify-center gap-3 transition-all"
+									>
+										<FaPhone className="w-4 h-4" />
+										Join by Code
+									</button>
+								</div>
+
+								<div className="text-xs text-neutral-500">
+									Share your code with friends to connect
 								</div>
 							</div>
 						</div>
 
-						{/* Voice Control Panel */}
-						<div className="px-6 py-4">
-							<VoiceControlPanel
-								connected={connected}
-								connecting={false}
-								muted={muted}
-								isSelfSpeaking={isSelfSpeaking || false}
-								pushToTalkEnabled={pushToTalkEnabled}
-								pushToTalkActive={false}
-								roomId={joinedRoomId}
-								peerCount={(connectedPeers || []).length}
-								onToggleMute={() => setMuted?.(!muted)}
-								onLeaveCall={() => leaveCall?.()}
-								className="max-w-md mx-auto"
-							/>
-						</div>
-					</div>
-				) : inLobbyOrGame ? (
-					/* Join Call Interface - League */
-					<div className="flex-1 flex items-center justify-center">
-						<div className="text-center max-w-md mx-auto px-6">
-							<div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center">
-								<FaPhone className="w-10 h-10 text-white" />
-							</div>
-							<h2 className="text-2xl font-bold text-white mb-4">Ready to Connect</h2>
-							<p className="text-neutral-400 mb-8">Join voice chat with your League teammates</p>
-							<button
-								onClick={() => joinCall?.(true)}
-								className="btn-primary px-8 py-3 rounded-xl font-semibold flex items-center gap-3 mx-auto hover:scale-105 transition-transform"
-							>
-								<FaPhone />
-								Join League Chat
-							</button>
-						</div>
-					</div>
-				) : (
-					/* Waiting State with Manual Call Options */
-					<div className="flex-1 flex items-center justify-center">
-						<div className="text-center max-w-lg mx-auto px-6">
-							<div className="w-24 h-24 mx-auto mb-6 rounded-full bg-neutral-800 flex items-center justify-center">
-								<FaGamepad className="w-10 h-10 text-neutral-400" />
-							</div>
-							<h2 className="text-2xl font-bold text-white mb-4">Ready for Voice Chat</h2>
-							<p className="text-neutral-400 mb-6">Start League of Legends for auto-join, or create a manual call</p>
-							
-							{/* Setup Status */}
-							<div className="mb-6">
-								<SetupStatusCard />
-							</div>
-							
-							{/* Manual Call Options */}
-							<div className="space-y-4 mb-8">
-								<button
-									onClick={handleCreateManualCall}
-									className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform"
-								>
-									<FaPlus />
-									Start Manual Call
-								</button>
-								
-								<button
-									onClick={() => setShowJoinModal(true)}
-									className="w-full px-6 py-3 rounded-xl chip hover:bg-white/10 border border-white/10 font-semibold flex items-center justify-center gap-3 transition-all"
-								>
-									<FaPhone />
-									Join by Code
-								</button>
-							</div>
-							
-							<div className="flex justify-center gap-4">
-								<Link href="/settings" className="px-6 py-2 rounded-lg chip hover:bg-white/10 border border-white/10">
-									Settings
-								</Link>
-								<Link href="/overlay" className="px-6 py-2 rounded-lg chip hover:bg-white/10 border border-white/10">
-									Preview Overlay
-								</Link>
-								<button onClick={() => setShowDebug(true)} className="px-6 py-2 rounded-lg chip hover:bg-white/10 border border-white/10">
-									🐛 Debug
-								</button>
+						{/* Right Half - League Calls */}
+						<div className="flex-1 flex items-center justify-center">
+							<div className="text-center max-w-sm mx-auto px-6 py-12">
+								{availableLeagueCall && !autoJoinEnabled ? (
+									/* Active League Call Available */
+									<>
+										<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+											<FaGamepad className="w-8 h-8 text-white" />
+										</div>
+										<h2 className="text-xl font-bold text-white mb-3">League Call Active</h2>
+										<p className="text-neutral-400 text-sm mb-6">
+											{availableLeagueCall.memberCount} teammates are waiting in voice chat
+										</p>
+										
+										<button
+											onClick={handleJoinLeagueCall}
+											className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform mb-4"
+										>
+											<FaGamepad className="w-4 h-4" />
+											Join League Call
+										</button>
+
+										<div className="text-xs text-neutral-500">
+											Auto-join is disabled in settings
+										</div>
+									</>
+								) : inLobbyOrGame ? (
+									/* Ready to Join League */
+									<>
+										<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+											<FaGamepad className="w-8 h-8 text-white" />
+										</div>
+										<h2 className="text-xl font-bold text-white mb-3">League Chat</h2>
+										<p className="text-neutral-400 text-sm mb-6">
+											{autoJoinEnabled ? 
+												'Auto-join is enabled. You\'ll connect automatically when the game starts.' :
+												'Ready to connect with your League teammates'
+											}
+										</p>
+										
+										{!autoJoinEnabled && (
+											<button
+												onClick={() => joinCall?.(true)}
+												className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform mb-4"
+											>
+												<FaPhone className="w-4 h-4" />
+												Join League Chat
+											</button>
+										)}
+
+										<div className="text-xs text-neutral-500">
+											{gameState}
+										</div>
+									</>
+								) : (
+									/* Waiting for League */
+									<>
+										<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-neutral-800 flex items-center justify-center">
+											<FaGamepad className="w-8 h-8 text-neutral-400" />
+										</div>
+										<h2 className="text-xl font-bold text-white mb-3">League Chat</h2>
+										<p className="text-neutral-400 text-sm mb-6">
+											Start League of Legends to automatically connect with teammates
+										</p>
+										
+										<div className="text-xs text-neutral-500 mb-4">
+											{gameState}
+										</div>
+
+										{/* Setup Status */}
+										<SetupStatusCard />
+									</>
+								)}
 							</div>
 						</div>
 					</div>
 				)}
+
 			</main>
 
-			{/* Status Bar */}
-			<footer className="px-6 py-2 border-t border-white/10 bg-neutral-950/50">
-				<div className="flex items-center justify-between text-xs text-neutral-400">
-					<div className="flex items-center gap-4">
-						<div className="flex items-center gap-2">
-							<ConnectionQualityIndicator stats={connectionStats || null} size="sm" />
-							<span>Connection</span>
-						</div>
-						{pushToTalkEnabled ? (
-							<span>Push-to-Talk: {pushToTalkKey}</span>
-						) : (
-							<span>Hotkey: Ctrl+Shift+M</span>
-						)}
-					</div>
-					<div className="flex items-center gap-2">
-						{isSelfSpeaking && (
-							<div className="flex items-center gap-1 text-green-400">
-								<FaMicrophone className="animate-pulse" />
-								<span>Speaking</span>
-							</div>
-						)}
-					</div>
-				</div>
-			</footer>
 
 			{/* Join by Code Modal */}
 			{showJoinModal && (
@@ -483,6 +775,197 @@ export default function Home() {
 				<QuickStartGuide
 					onClose={() => setShowQuickStart(false)}
 				/>
+			)}
+
+			{/* Call Switch Modal */}
+			{showCallSwitchModal && availableLeagueCall && (
+				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+					<div className="bg-neutral-900 rounded-2xl p-6 w-full max-w-md border border-white/10 relative overflow-hidden">
+						{/* Progress bar */}
+						<div className="absolute top-0 left-0 h-1 bg-gradient-to-r from-violet-500 to-cyan-500 transition-all duration-1000"
+							 style={{ width: `${(switchCountdown / 10) * 100}%` }}
+						></div>
+						
+						<div className="text-center">
+							<div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+								<FaGamepad className="w-8 h-8 text-white" />
+							</div>
+							
+							<h3 className="text-xl font-semibold text-white mb-2">League Game Detected!</h3>
+							<p className="text-neutral-400 text-sm mb-6">
+								A League game call is available with {availableLeagueCall.memberCount} teammates. 
+								Would you like to switch from your manual call?
+							</p>
+							
+							<div className="space-y-3 mb-6">
+								<button
+									onClick={handleJoinLeagueCall}
+									className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform"
+								>
+									<FaGamepad />
+									Join League Call ({availableLeagueCall.memberCount} players)
+								</button>
+								
+								<button
+									onClick={handleStayInManualCall}
+									className="w-full px-6 py-3 rounded-xl chip hover:bg-white/10 border border-white/10 font-semibold transition-all"
+								>
+									Stay in Manual Call
+								</button>
+							</div>
+							
+							<div className="text-center">
+								<p className="text-xs text-neutral-500">
+									Auto-staying in current call in {switchCountdown}s
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Fixed Voice Control Bar - Only when connected */}
+			{connected && joinedRoomId && (
+				<div className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-sm border-t border-white/10">
+					<div className="px-6 py-3">
+						<div className="max-w-6xl mx-auto flex items-center justify-between">
+							{/* Left: Connection Status */}
+							<div className="flex items-center gap-4">
+								<div className="flex items-center gap-2 text-sm">
+									<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+									<span className="text-green-400">Connected</span>
+									<span className="text-neutral-400">•</span>
+									<span className="text-neutral-400">{(connectedPeers || []).length} in call</span>
+								</div>
+								{isSelfSpeaking && !muted && !deafened && (
+									<div className="flex items-center gap-1 text-green-400 text-sm">
+										<FaMicrophone className="w-3 h-3 animate-pulse" />
+									</div>
+								)}
+							</div>
+							
+							{/* Center: Room Info */}
+							<div className="flex items-center gap-2 text-sm text-neutral-400">
+								<span>Room: {joinedRoomId}</span>
+							</div>
+							
+							{/* Right: Audio Controls */}
+							<div className="flex items-center gap-2">
+								{/* Combined Microphone Control - Click to mute, hover for gain */}
+								<div className="relative group">
+									<button
+										onClick={() => setMuted?.(!muted)}
+										className={`p-2 rounded-lg transition-colors ${
+											muted || deafened
+												? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+												: 'bg-neutral-700/50 text-neutral-300 hover:bg-neutral-700'
+										}`}
+										title={muted ? 'Unmute' : 'Mute'}
+									>
+										{(muted || deafened) ? <FaMicrophoneSlash className="w-4 h-4" /> : <FaMicrophone className="w-4 h-4" />}
+									</button>
+
+									{/* Hover Volume Control */}
+									<div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-neutral-900/95 backdrop-blur-sm border border-neutral-700/50 rounded-lg p-3 shadow-lg min-w-[120px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+										{/* Arrow */}
+										<div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-neutral-700/50"></div>
+										
+										{/* Label */}
+										<div className="text-xs text-neutral-400 mb-2 text-center">Microphone Gain</div>
+										
+										{/* Slider */}
+										<div className="relative">
+											<input
+												type="range"
+												min="0"
+												max="2"
+												step="0.1"
+												value={microphoneGain}
+												onChange={(e) => handleMicrophoneGainChange(parseFloat(e.target.value))}
+												className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+												style={{
+													background: `linear-gradient(to right, rgb(139 92 246) 0%, rgb(139 92 246) ${(microphoneGain / 2) * 100}%, rgb(64 64 64) ${(microphoneGain / 2) * 100}%, rgb(64 64 64) 100%)`
+												}}
+											/>
+											
+											{/* Volume percentage */}
+											<div className="text-xs text-neutral-400 text-center mt-1">
+												{Math.round(microphoneGain * 100)}%
+											</div>
+										</div>
+									</div>
+								</div>
+
+								{/* Combined Output Control - Click to deafen, hover for volume */}
+								<div className="relative group">
+									<button
+										onClick={handleDeafenToggle}
+										className={`p-2 rounded-lg transition-colors ${
+											deafened 
+												? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+												: 'bg-neutral-700/50 text-neutral-300 hover:bg-neutral-700'
+										}`}
+										title={deafened ? 'Undeafen' : 'Deafen (mute speakers)'}
+									>
+										{deafened ? (
+											<FaVolumeXmark className="w-4 h-4" />
+										) : masterVolume > 0.5 ? (
+											<FaVolumeHigh className="w-4 h-4" />
+										) : (
+											<FaVolumeLow className="w-4 h-4" />
+										)}
+									</button>
+
+									{/* Hover Volume Control */}
+									<div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-neutral-900/95 backdrop-blur-sm border border-neutral-700/50 rounded-lg p-3 shadow-lg min-w-[120px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+										{/* Arrow */}
+										<div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-neutral-700/50"></div>
+										
+										{/* Label */}
+										<div className="text-xs text-neutral-400 mb-2 text-center">Output Volume</div>
+										
+										{/* Slider */}
+										<div className="relative">
+											<input
+												type="range"
+												min="0"
+												max="1"
+												step="0.05"
+												value={masterVolume}
+												onChange={(e) => handleMasterVolumeChange(parseFloat(e.target.value))}
+												className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+												style={{
+													background: `linear-gradient(to right, rgb(139 92 246) 0%, rgb(139 92 246) ${masterVolume * 100}%, rgb(64 64 64) ${masterVolume * 100}%, rgb(64 64 64) 100%)`
+												}}
+											/>
+											
+											{/* Volume percentage */}
+											<div className="text-xs text-neutral-400 text-center mt-1">
+												{Math.round(masterVolume * 100)}%
+											</div>
+										</div>
+									</div>
+								</div>
+								
+								<button
+									onClick={() => leaveCall?.()}
+									className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+									title="Leave Call"
+								>
+									<FaPhoneSlash className="w-4 h-4" />
+								</button>
+								
+								<Link
+									href="/settings"
+									className="p-2 rounded-lg bg-neutral-700/50 text-neutral-300 hover:bg-neutral-700 transition-colors"
+									title="Settings"
+								>
+									<FaGear className="w-4 h-4" />
+								</Link>
+							</div>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

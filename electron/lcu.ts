@@ -1,4 +1,5 @@
 import https from 'https';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -85,8 +86,15 @@ export function findLCUAuth(): LCUAuth | null {
 			console.log('[LCU] Found lockfile at:', p);
 			const content = fs.readFileSync(p, 'utf8');
 			const [name, pid, port, password, protocol] = content.split(':');
+			
+			// Validate that we have all required fields
+			if (!port || !password || !protocol) {
+				console.log('[LCU] Invalid lockfile format - missing required fields:', { port: !!port, password: !!password, protocol: !!protocol });
+				continue;
+			}
+			
 			const auth = { protocol, address: '127.0.0.1', port: Number(port), username: 'riot', password };
-			console.log('[LCU] Successfully parsed lockfile auth:', { port: auth.port });
+			console.log('[LCU] Successfully parsed lockfile auth:', { port: auth.port, protocol: auth.protocol, address: auth.address });
 			return auth;
 		} catch (error) {
 			console.log('[LCU] Error reading lockfile', p, ':', error);
@@ -193,7 +201,10 @@ function getAuthFromRiotClientInstalls(): LCUAuth | null {
 
 export async function lcuRequest<T>(auth: LCUAuth, pathName: string, method: string = 'GET', body?: any): Promise<T> {
 	return new Promise((resolve, reject) => {
-		const opts: https.RequestOptions = {
+		// Add debug logging for request details
+		console.log(`[LCU] Making ${method} request to ${auth.protocol}://${auth.address}:${auth.port}${pathName}`);
+		
+		const opts = {
 			method,
 			rejectUnauthorized: false,
 			host: auth.address,
@@ -204,13 +215,22 @@ export async function lcuRequest<T>(auth: LCUAuth, pathName: string, method: str
 				'Content-Type': 'application/json',
 			},
 		};
-		const req = https.request(opts, (res) => {
+		
+		// Use the correct protocol from auth
+		const requestModule = auth.protocol === 'https' ? https : http;
+		const req = requestModule.request(opts, (res) => {
 			let data = '';
 			res.on('data', (chunk) => (data += chunk));
 			res.on('end', () => {
 				try {
+					if (res.statusCode && res.statusCode >= 400) {
+						console.log(`[LCU] Request failed with status ${res.statusCode}: ${data}`);
+						reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+						return;
+					}
 					resolve(data ? JSON.parse(data) : (undefined as any));
 				} catch (e) {
+					console.log('[LCU] Failed to parse response:', data);
 					reject(e);
 				}
 			});
@@ -218,7 +238,10 @@ export async function lcuRequest<T>(auth: LCUAuth, pathName: string, method: str
 		req.setTimeout(2000, () => {
 			req.destroy(new Error('LCU request timeout'));
 		});
-		req.on('error', reject);
+		req.on('error', (err) => {
+			console.log('[LCU] Request error:', err.message);
+			reject(err);
+		});
 		if (body) req.write(JSON.stringify(body));
 		req.end();
 	});

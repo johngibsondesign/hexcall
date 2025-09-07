@@ -3,7 +3,7 @@ import { useVoiceRoom } from '../hooks/useVoiceRoom';
 import { useVoice } from '../providers/VoiceProvider';
 import { DetailedConnectionStats } from '../components/ConnectionQualityIndicator';
 import Link from 'next/link';
-import { FaArrowsRotate, FaDownload, FaCheck, FaSpinner } from 'react-icons/fa6';
+import { FaArrowsRotate, FaDownload, FaCheck, FaSpinner, FaMicrophone, FaVolumeHigh, FaGamepad, FaEye, FaGear, FaBug, FaRocket, FaShield } from 'react-icons/fa6';
 
 type MediaDeviceInfoLite = Pick<MediaDeviceInfo, 'deviceId' | 'label' | 'kind'>;
 
@@ -25,6 +25,9 @@ export default function Settings() {
 	const [noiseGate, setNoiseGate] = useState(0.03);
 	const [autoJoin, setAutoJoin] = useState(true);
 	const [vadThreshold, setVadThreshold] = useState(0.01);
+	const [startOnSystemStart, setStartOnSystemStart] = useState(false);
+	const [showDebug, setShowDebug] = useState(false);
+	const [showOverlayPreview, setShowOverlayPreview] = useState(false);
 	
 	// Update-related state
 	const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'none'>('idle');
@@ -63,6 +66,8 @@ export default function Settings() {
 			if (aj !== null) setAutoJoin(aj !== '0');
 			const vad = localStorage.getItem('hexcall-vad-threshold');
 			if (vad !== null) setVadThreshold(Number(vad));
+			const startup = localStorage.getItem('hexcall-start-on-boot');
+			if (startup !== null) setStartOnSystemStart(startup !== '0');
 		} catch {}
 	}, []);
 
@@ -165,6 +170,13 @@ export default function Settings() {
 	useEffect(() => { try { localStorage.setItem('hexcall-audio-agc', autoGainControl ? '1' : '0'); } catch {} }, [autoGainControl]);
 	useEffect(() => { try { localStorage.setItem('hexcall-audio-gate', String(noiseGate)); } catch {} }, [noiseGate]);
 	useEffect(() => { try { localStorage.setItem('hexcall-vad-threshold', String(vadThreshold)); } catch {} }, [vadThreshold]);
+	useEffect(() => { 
+		try { 
+			localStorage.setItem('hexcall-start-on-boot', startOnSystemStart ? '1' : '0');
+			// Update Electron setting
+			window.hexcall?.setAutoStart?.(startOnSystemStart);
+		} catch {} 
+	}, [startOnSystemStart]);
 
 	useEffect(() => {
 		try {
@@ -423,165 +435,358 @@ export default function Settings() {
 	}
 
 	return (
-		<div className="min-h-screen bg-hextech">
-			<div className="max-w-5xl mx-auto px-6 py-8">
-				<div className="flex items-center gap-3">
-					<Link href="/" className="chip rounded px-2 py-1">← Back</Link>
-					<h1 className="text-3xl font-bold text-gradient">Settings</h1>
+		<div className="bg-hextech min-h-full">
+			<div className="max-w-6xl mx-auto px-6 py-8">
+				{/* Header */}
+				<div className="flex items-center justify-between mb-8">
+					<div className="flex items-center gap-4">
+						<Link href="/" className="w-10 h-10 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 flex items-center justify-center transition-colors">
+							<svg className="w-5 h-5 text-neutral-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+							</svg>
+						</Link>
+						<div>
+							<h1 className="text-3xl font-bold text-white">Settings</h1>
+							<p className="text-neutral-400 text-sm mt-1">Configure your HexCall experience</p>
+						</div>
+					</div>
+					<button 
+						onClick={() => setShowDebug(!showDebug)}
+						className={`px-4 py-2 rounded-xl transition-colors flex items-center gap-2 text-sm font-medium ${
+							showDebug 
+								? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+								: 'bg-neutral-800/50 text-neutral-300 border border-neutral-700/50 hover:bg-neutral-700/50'
+						}`}
+					>
+						<FaBug className="w-4 h-4" />
+						{showDebug ? 'Hide Debug' : 'Debug Mode'}
+					</button>
 				</div>
-				<div className="mt-6 grid md:grid-cols-2 gap-6">
-					<div className="glass rounded-xl p-5">
-						<div className="flex items-center justify-between mb-3">
-							<h2 className="text-sm text-neutral-300">Audio Devices</h2>
+
+				{/* Settings Grid */}
+				<div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+					{/* Audio Devices */}
+					<div className="glass rounded-2xl p-6 col-span-1 lg:col-span-2">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center">
+								<FaMicrophone className="w-5 h-5 text-white" />
+							</div>
+							<div className="flex-1">
+								<h2 className="text-lg font-semibold text-white">Audio Devices</h2>
+								<p className="text-sm text-neutral-400">Configure your microphone and speakers</p>
+							</div>
 							<button
 								onClick={refreshDevices}
-								className="p-2 rounded-lg hover:bg-white/10 transition-colors text-neutral-400 hover:text-white"
+								className="w-10 h-10 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 flex items-center justify-center transition-colors"
 								title="Refresh devices"
 							>
-								<FaArrowsRotate className="w-4 h-4" />
+								<FaArrowsRotate className="w-4 h-4 text-neutral-300" />
 							</button>
 						</div>
-						<label className="text-xs text-neutral-400">Microphone</label>
-						<select
-							className="mt-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 w-full"
-							value={selectedMic}
-							onChange={e => setSelectedMic(e.target.value)}
-						>
-							<option value="">System Default</option>
-							{mics.map(d => (
-								<option key={d.deviceId} value={d.deviceId}>{d.label || 'Mic'}</option>
-							))}
-						</select>
 
-						{/* Audio Testing */}
-						<div className="mt-4">
-							<div className="flex items-center justify-between mb-2">
-								<label className="text-xs text-neutral-400">Audio Test</label>
-								<button
-									onClick={isTestingAudio ? stopAudioTest : startAudioTest}
-									className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-										isTestingAudio 
-											? 'bg-red-500 hover:bg-red-600 text-white' 
-											: 'bg-violet-500 hover:bg-violet-600 text-white'
-									}`}
-								>
-									{isTestingAudio ? 'Stop Test' : 'Test Mic'}
-								</button>
-							</div>
-							{isTestingAudio && (
-								<div className="flex gap-2">
-									<div className="flex-1 bg-neutral-800 rounded-full h-2 overflow-hidden">
-										<div className="bg-green-500 h-full rounded-full transition-all" style={{ width: `${testAudioVolume * 100}%` }}></div>
-									</div>
-									<span className="text-xs text-green-400 min-w-[3ch]">{Math.round(testAudioVolume * 100)}%</span>
+						<div className="grid md:grid-cols-2 gap-6">
+							<div className="space-y-4">
+								<div>
+									<label className="text-sm font-medium text-neutral-300 mb-2 block">Microphone</label>
+									<select
+										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
+										value={selectedMic}
+										onChange={e => setSelectedMic(e.target.value)}
+									>
+										<option value="">System Default</option>
+										{mics.map(d => (
+											<option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>
+										))}
+									</select>
 								</div>
-							)}
-						</div>
 
-						<label className="mt-4 text-xs text-neutral-400">Output Device</label>
-						<select
-							className="mt-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 w-full"
-							value={selectedSpeaker}
-							onChange={e => setSelectedSpeaker(e.target.value)}
-						>
-							<option value="">System Default</option>
-							{speakers.map(d => (
-								<option key={d.deviceId} value={d.deviceId}>{d.label || 'Speakers'}</option>
-							))}
-						</select>
+								<div>
+									<label className="text-sm font-medium text-neutral-300 mb-2 block">Output Device</label>
+									<select
+										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
+										value={selectedSpeaker}
+										onChange={e => setSelectedSpeaker(e.target.value)}
+									>
+										<option value="">System Default</option>
+										{speakers.map(d => (
+											<option key={d.deviceId} value={d.deviceId}>{d.label || 'Speakers'}</option>
+										))}
+									</select>
+								</div>
 
-						<div className="mt-4">
-							<div className="h-2 bg-neutral-900 rounded overflow-hidden border border-neutral-800">
-								<div className="h-full bg-gradient-to-r from-violet-500 to-cyan-500 transition-[width] duration-100" style={{ width: `${Math.min(1, level * 4) * 100}%` }} />
+								<div className="flex gap-3">
+									<button onClick={testOutputTone} className="flex-1 px-4 py-2 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 text-neutral-300 hover:text-white transition-colors text-sm font-medium">
+										Test Output
+									</button>
+									<button
+										onClick={isTestingAudio ? stopAudioTest : startAudioTest}
+										className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+											isTestingAudio 
+												? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30' 
+												: 'bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30'
+										}`}
+									>
+										{isTestingAudio ? 'Stop Test' : 'Test Mic'}
+									</button>
+								</div>
 							</div>
-							<p className="mt-1 text-xs text-neutral-400">Mic input level</p>
-							<div className="mt-2">
-								<button onClick={testOutputTone} className="px-3 py-2 rounded chip">Test Output</button>
-							</div>
-						</div>
-					</div>
 
-					<div className="glass rounded-xl p-5">
-						<h2 className="text-sm text-neutral-300 mb-3">Controls</h2>
-						<div className="grid gap-2">
-							<label className="text-xs text-neutral-400">Push-to-talk</label>
-							<div className="flex items-center gap-3">
-								<input type="checkbox" checked={usePushToTalk} onChange={e => setUsePushToTalk(e.target.checked)} />
-								<input
-									className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2"
-									value={pushToTalkKey}
-									onChange={e => setPushToTalkKey(e.target.value)}
-								/>
-							</div>
-							<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={autoJoin} onChange={e => setAutoJoin(e.target.checked)} /> Auto join calls (recommended)</label>
-						</div>
-						<div className="mt-5 grid gap-3">
-							<h3 className="text-xs text-neutral-400">Audio Improvements</h3>
-							<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={echoCancellation} onChange={e => setEchoCancellation(e.target.checked)} /> Echo Cancellation</label>
-							<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={noiseSuppression} onChange={e => setNoiseSuppression(e.target.checked)} /> Noise Suppression</label>
-							<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoGainControl} onChange={e => setAutoGainControl(e.target.checked)} /> Auto Gain Control</label>
-							<label className="text-xs text-neutral-400">Noise gate (beta) {noiseGate.toFixed(2)}</label>
-							<input type="range" min={0} max={0.2} step={0.005} value={noiseGate} onChange={e => setNoiseGate(Number(e.target.value))} />
-							<label className="text-xs text-neutral-400">Voice detection threshold {vadThreshold.toFixed(3)}</label>
-							<input type="range" min={0.001} max={0.1} step={0.001} value={vadThreshold} onChange={e => setVadThreshold(Number(e.target.value))} />
-							<p className="text-xs text-neutral-500">Lower = more sensitive to voice, Higher = less sensitive</p>
-							<div className="flex items-center gap-3">
-								<button onClick={() => join()} disabled={!canJoin} className="btn-primary px-4 py-2 rounded ring-hextech disabled:opacity-50">{connected ? 'Connected' : (canJoin ? 'Join Test Room' : 'Waiting for another user…')}</button>
-								<button onClick={() => mute(true)} className="px-4 py-2 rounded chip">Mute</button>
-								<button onClick={() => mute(false)} className="px-4 py-2 rounded chip">Unmute</button>
+							<div className="space-y-4">
+								<div>
+									<label className="text-sm font-medium text-neutral-300 mb-2 block">Microphone Level</label>
+									<div className="h-3 bg-neutral-800/50 rounded-full overflow-hidden border border-neutral-700/50">
+										<div className="h-full bg-gradient-to-r from-violet-500 to-cyan-500 transition-[width] duration-100" style={{ width: `${Math.min(1, level * 4) * 100}%` }} />
+									</div>
+									<p className="text-xs text-neutral-400 mt-1">Speak to test your microphone</p>
+								</div>
+
+								{isTestingAudio && (
+									<div>
+										<label className="text-sm font-medium text-neutral-300 mb-2 block">Test Audio Level</label>
+										<div className="flex gap-3 items-center">
+											<div className="flex-1 h-3 bg-neutral-800/50 rounded-full overflow-hidden border border-neutral-700/50">
+												<div className="bg-green-500 h-full rounded-full transition-all" style={{ width: `${testAudioVolume * 100}%` }}></div>
+											</div>
+											<span className="text-sm text-green-400 min-w-[3ch] font-mono">{Math.round(testAudioVolume * 100)}%</span>
+										</div>
+									</div>
+								)}
 							</div>
 						</div>
 					</div>
 
-					<div className="glass rounded-xl p-5">
-						<h2 className="text-sm text-neutral-300 mb-3">Connection Stats</h2>
-						<DetailedConnectionStats stats={connectionStats || null} />
-					</div>
+					{/* Voice Controls */}
+					<div className="glass rounded-2xl p-6">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+								<FaGear className="w-5 h-5 text-white" />
+							</div>
+							<div>
+								<h2 className="text-lg font-semibold text-white">Voice Controls</h2>
+								<p className="text-sm text-neutral-400">Push-to-talk and auto-join settings</p>
+							</div>
+						</div>
 
-					<div className="glass rounded-xl p-5">
-						<h2 className="text-sm text-neutral-300 mb-3">Settings Backup</h2>
-						<div className="grid gap-3">
-							<div className="flex gap-2">
-								<button
-									onClick={exportSettings}
-									className="flex-1 bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium"
-								>
-									Export Settings
-								</button>
-								<label className="flex-1 bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium cursor-pointer text-center">
-									Import Settings
+						<div className="space-y-6">
+							<div>
+								<div className="flex items-center justify-between mb-3">
+									<label className="text-sm font-medium text-neutral-300">Push-to-Talk</label>
+									<label className="relative inline-flex items-center cursor-pointer">
+										<input type="checkbox" checked={usePushToTalk} onChange={e => setUsePushToTalk(e.target.checked)} className="sr-only peer" />
+										<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+									</label>
+								</div>
+								{usePushToTalk && (
 									<input
-										type="file"
-										accept=".json"
-										onChange={importSettings}
-										className="hidden"
+										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors text-center font-mono"
+										value={pushToTalkKey}
+										onChange={e => setPushToTalkKey(e.target.value)}
+										placeholder="Enter key..."
 									/>
+								)}
+							</div>
+
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">Auto-join League Calls</label>
+									<p className="text-xs text-neutral-400 mt-1">Automatically join when a League game starts</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={autoJoin} onChange={e => setAutoJoin(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
 								</label>
 							</div>
-							<p className="text-xs text-neutral-400">
-								Export your settings to backup or share with other devices. Import to restore previous settings.
-							</p>
+
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">Start on System Boot</label>
+									<p className="text-xs text-neutral-400 mt-1">Launch HexCall when Windows starts</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={startOnSystemStart} onChange={e => setStartOnSystemStart(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+								</label>
+							</div>
 						</div>
 					</div>
 
-					<div className="glass rounded-xl p-5">
-						<h2 className="text-sm text-neutral-300 mb-3">App Updates</h2>
-						<div className="grid gap-3">
-							<div className="flex items-center gap-3">
+					{/* Audio Processing */}
+					<div className="glass rounded-2xl p-6">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+								<FaVolumeHigh className="w-5 h-5 text-white" />
+							</div>
+							<div>
+								<h2 className="text-lg font-semibold text-white">Audio Processing</h2>
+								<p className="text-sm text-neutral-400">Enhance your audio quality</p>
+							</div>
+						</div>
+
+						<div className="space-y-4">
+							<div className="flex items-center justify-between">
+								<span className="text-sm text-neutral-300">Echo Cancellation</span>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={echoCancellation} onChange={e => setEchoCancellation(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+								</label>
+							</div>
+
+							<div className="flex items-center justify-between">
+								<span className="text-sm text-neutral-300">Noise Suppression</span>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={noiseSuppression} onChange={e => setNoiseSuppression(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+								</label>
+							</div>
+
+							<div className="flex items-center justify-between">
+								<span className="text-sm text-neutral-300">Auto Gain Control</span>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={autoGainControl} onChange={e => setAutoGainControl(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+								</label>
+							</div>
+
+							<div className="space-y-2">
+								<div className="flex justify-between">
+									<label className="text-sm text-neutral-300">Noise Gate</label>
+									<span className="text-xs text-neutral-400 font-mono">{noiseGate.toFixed(3)}</span>
+								</div>
+								<input 
+									type="range" 
+									min={0} 
+									max={0.2} 
+									step={0.005} 
+									value={noiseGate} 
+									onChange={e => setNoiseGate(Number(e.target.value))} 
+									className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+									style={{
+										background: `linear-gradient(to right, rgb(34 197 94) 0%, rgb(34 197 94) ${(noiseGate / 0.2) * 100}%, rgb(64 64 64) ${(noiseGate / 0.2) * 100}%, rgb(64 64 64) 100%)`
+									}}
+								/>
+							</div>
+
+							<div className="space-y-2">
+								<div className="flex justify-between">
+									<label className="text-sm text-neutral-300">Voice Detection Threshold</label>
+									<span className="text-xs text-neutral-400 font-mono">{vadThreshold.toFixed(3)}</span>
+								</div>
+								<input 
+									type="range" 
+									min={0.001} 
+									max={0.1} 
+									step={0.001} 
+									value={vadThreshold} 
+									onChange={e => setVadThreshold(Number(e.target.value))} 
+									className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+									style={{
+										background: `linear-gradient(to right, rgb(34 197 94) 0%, rgb(34 197 94) ${(vadThreshold / 0.1) * 100}%, rgb(64 64 64) ${(vadThreshold / 0.1) * 100}%, rgb(64 64 64) 100%)`
+									}}
+								/>
+								<p className="text-xs text-neutral-500">Lower = more sensitive, Higher = less sensitive</p>
+							</div>
+
+							<div className="flex gap-2 pt-2">
+								<button onClick={() => join()} disabled={!canJoin} className="flex-1 btn-primary px-4 py-2 rounded-xl disabled:opacity-50 text-sm font-medium">
+									{connected ? 'Connected' : (canJoin ? 'Test Room' : 'Waiting...')}
+								</button>
+								<button onClick={() => mute(true)} className="px-4 py-2 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 text-neutral-300 hover:text-white transition-colors text-sm">
+									Mute
+								</button>
+								<button onClick={() => mute(false)} className="px-4 py-2 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/50 border border-neutral-700/50 text-neutral-300 hover:text-white transition-colors text-sm">
+									Unmute
+								</button>
+							</div>
+						</div>
+					</div>
+
+					{/* Overlay Settings */}
+					<div className="glass rounded-2xl p-6">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center">
+								<FaEye className="w-5 h-5 text-white" />
+							</div>
+							<div>
+								<h2 className="text-lg font-semibold text-white">Overlay</h2>
+								<p className="text-sm text-neutral-400">In-game overlay position and size</p>
+							</div>
+						</div>
+
+						<div className="space-y-4">
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">Preview Overlay</label>
+									<p className="text-xs text-neutral-400 mt-1">Show overlay preview with mock data</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={showOverlayPreview} onChange={e => setShowOverlayPreview(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+								</label>
+							</div>
+
+							<div>
+								<label className="text-sm font-medium text-neutral-300 mb-2 block">Position</label>
+								<select 
+									className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors" 
+									value={corner} 
+									onChange={e => setCorner(e.target.value as Corner)}
+								>
+									<option value="top-right">Top Right</option>
+									<option value="top-left">Top Left</option>
+									<option value="bottom-right">Bottom Right</option>
+									<option value="bottom-left">Bottom Left</option>
+								</select>
+							</div>
+
+							<div className="space-y-2">
+								<div className="flex justify-between">
+									<label className="text-sm font-medium text-neutral-300">Scale</label>
+									<span className="text-xs text-neutral-400 font-mono">{scale.toFixed(2)}x</span>
+								</div>
+								<input 
+									type="range" 
+									min={0.75} 
+									max={1.5} 
+									step={0.05} 
+									value={scale} 
+									onChange={e => setScale(Number(e.target.value))} 
+									className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+									style={{
+										background: `linear-gradient(to right, rgb(234 179 8) 0%, rgb(234 179 8) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) 100%)`
+									}}
+								/>
+							</div>
+						</div>
+					</div>
+
+					{/* App Updates */}
+					<div className="glass rounded-2xl p-6">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+								<FaRocket className="w-5 h-5 text-white" />
+							</div>
+							<div>
+								<h2 className="text-lg font-semibold text-white">App Updates</h2>
+								<p className="text-sm text-neutral-400">Keep HexCall up to date</p>
+							</div>
+						</div>
+
+						<div className="space-y-4">
+							<div className="flex flex-wrap gap-3">
 								<button
 									onClick={checkForUpdates}
 									disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
-									className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 disabled:bg-neutral-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium disabled:cursor-not-allowed"
+									className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:bg-neutral-700/50 text-blue-400 disabled:text-neutral-400 px-4 py-2 rounded-xl transition-colors text-sm font-medium disabled:cursor-not-allowed border border-blue-500/30 disabled:border-neutral-600/30"
 								>
 									{updateStatus === 'checking' ? (
 										<>
-											<FaSpinner className="animate-spin" />
+											<FaSpinner className="animate-spin w-4 h-4" />
 											Checking...
 										</>
 									) : (
 										<>
-											<FaArrowsRotate />
-											Check for Updates
+											<FaArrowsRotate className="w-4 h-4" />
+											Check Updates
 										</>
 									)}
 								</button>
@@ -589,19 +794,19 @@ export default function Settings() {
 								{updateStatus === 'available' && (
 									<button
 										onClick={downloadUpdate}
-										className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium"
+										className="flex items-center gap-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-2 rounded-xl transition-colors text-sm font-medium border border-green-500/30"
 									>
-										<FaDownload />
-										Download Update
+										<FaDownload className="w-4 h-4" />
+										Download
 									</button>
 								)}
 								
 								{updateStatus === 'downloaded' && (
 									<button
 										onClick={installUpdate}
-										className="flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded transition-colors text-sm font-medium"
+										className="flex items-center gap-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 px-4 py-2 rounded-xl transition-colors text-sm font-medium border border-purple-500/30"
 									>
-										<FaCheck />
+										<FaCheck className="w-4 h-4" />
 										Install & Restart
 									</button>
 								)}
@@ -611,9 +816,9 @@ export default function Settings() {
 								<div className="space-y-2">
 									<div className="flex justify-between text-xs text-neutral-400">
 										<span>Downloading update...</span>
-										<span>{downloadProgress}%</span>
+										<span className="font-mono">{downloadProgress}%</span>
 									</div>
-									<div className="w-full bg-neutral-800 rounded-full h-2">
+									<div className="w-full bg-neutral-800/50 rounded-full h-2 border border-neutral-700/50">
 										<div 
 											className="bg-blue-500 h-2 rounded-full transition-all duration-300"
 											style={{ width: `${downloadProgress}%` }}
@@ -622,32 +827,124 @@ export default function Settings() {
 								</div>
 							)}
 							
-							<div className="text-xs text-neutral-400">
-								{updateStatus === 'none' && 'No updates available'}
+							<div className="text-xs text-neutral-400 p-3 bg-neutral-800/30 rounded-xl border border-neutral-700/30">
+								{updateStatus === 'none' && '✅ No updates available'}
 								{updateStatus === 'available' && updateInfo && (
-									<span>Update available: v{updateInfo.version}</span>
+									<span>🚀 Update available: v{updateInfo.version}</span>
 								)}
-								{updateStatus === 'downloaded' && 'Update ready to install'}
-								{updateStatus === 'idle' && 'Click "Check for Updates" to see if a new version is available'}
+								{updateStatus === 'downloaded' && '⚡ Update ready to install'}
+								{updateStatus === 'idle' && '🔍 Click "Check Updates" to see if a new version is available'}
 							</div>
 						</div>
 					</div>
 
-					<div className="glass rounded-xl p-5">
-						<h2 className="text-sm text-neutral-300 mb-3">Overlay</h2>
-						<div className="grid gap-3">
-							<label className="text-xs text-neutral-400">Corner</label>
-							<select className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2 w-full" value={corner} onChange={e => setCorner(e.target.value as Corner)}>
-								<option value="top-right">Top Right</option>
-								<option value="top-left">Top Left</option>
-								<option value="bottom-right">Bottom Right</option>
-								<option value="bottom-left">Bottom Left</option>
-							</select>
-							<label className="text-xs text-neutral-400">Scale ({(scale).toFixed(2)}x)</label>
-							<input type="range" min={0.75} max={1.5} step={0.05} value={scale} onChange={e => setScale(Number(e.target.value))} />
+					{/* Settings Backup */}
+					<div className="glass rounded-2xl p-6">
+						<div className="flex items-center gap-3 mb-6">
+							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+								<FaShield className="w-5 h-5 text-white" />
+							</div>
+							<div>
+								<h2 className="text-lg font-semibold text-white">Settings Backup</h2>
+								<p className="text-sm text-neutral-400">Export and import your settings</p>
+							</div>
+						</div>
+
+						<div className="space-y-4">
+							<div className="flex gap-3">
+								<button
+									onClick={exportSettings}
+									className="flex-1 bg-violet-500/20 hover:bg-violet-500/30 text-violet-400 px-4 py-2 rounded-xl transition-colors text-sm font-medium border border-violet-500/30"
+								>
+									Export Settings
+								</button>
+								<label className="flex-1 bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300 hover:text-white px-4 py-2 rounded-xl transition-colors text-sm font-medium cursor-pointer text-center border border-neutral-700/50">
+									Import Settings
+									<input
+										type="file"
+										accept=".json"
+										onChange={importSettings}
+										className="hidden"
+									/>
+								</label>
+							</div>
+							<p className="text-xs text-neutral-400 p-3 bg-neutral-800/30 rounded-xl border border-neutral-700/30">
+								💾 Export your settings to backup or share with other devices. Import to restore previous settings.
+							</p>
 						</div>
 					</div>
+
+					{/* Connection Stats - only show in debug mode */}
+					{showDebug && (
+						<div className="glass rounded-2xl p-6 col-span-1 lg:col-span-2 xl:col-span-3">
+							<div className="flex items-center gap-3 mb-6">
+								<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
+									<FaBug className="w-5 h-5 text-white" />
+								</div>
+								<div>
+									<h2 className="text-lg font-semibold text-white">Debug Information</h2>
+									<p className="text-sm text-neutral-400">Connection stats and technical details</p>
+								</div>
+							</div>
+							<DetailedConnectionStats stats={connectionStats || null} />
+						</div>
+					)}
 				</div>
+
+				{/* Preview Overlay */}
+				{showOverlayPreview && (
+					<div className={`fixed z-50 pointer-events-none ${
+						corner === 'top-right' ? 'top-4 right-4' :
+						corner === 'top-left' ? 'top-4 left-4' :
+						corner === 'bottom-right' ? 'bottom-4 right-4' :
+						'bottom-4 left-4'
+					}`} style={{ transform: `scale(${scale})` }}>
+						<div className="bg-neutral-900/95 backdrop-blur-sm border border-neutral-700/50 rounded-2xl p-4 min-w-[280px]">
+							{/* Header */}
+							<div className="flex items-center gap-2 mb-3">
+								<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+								<span className="text-xs text-neutral-400 font-medium">Voice Chat Preview</span>
+							</div>
+
+							{/* Mock Participants */}
+							<div className="space-y-2">
+								{[
+									{ name: 'You', speaking: true, muted: false },
+									{ name: 'Teammate Alpha', speaking: false, muted: false },
+									{ name: 'Teammate Beta', speaking: false, muted: true },
+									{ name: 'Teammate Gamma', speaking: true, muted: false },
+									{ name: 'Teammate Delta', speaking: false, muted: false }
+								].map((participant, idx) => (
+									<div key={idx} className={`flex items-center gap-3 p-2 rounded-lg transition-all ${
+										participant.speaking ? 'bg-green-500/20 ring-1 ring-green-500/30' : 'bg-neutral-800/30'
+									}`}>
+										<div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+											participant.speaking ? 'bg-green-500 text-white' : 'bg-neutral-600 text-neutral-300'
+										}`}>
+											{participant.name.charAt(0)}
+										</div>
+										<div className="flex-1 min-w-0">
+											<div className="text-sm text-white truncate">{participant.name}</div>
+											<div className="text-xs text-neutral-400">Connected: 2m 15s</div>
+										</div>
+										{participant.muted && (
+											<div className="w-4 h-4 rounded bg-red-500/20 flex items-center justify-center">
+												<div className="w-2 h-2 bg-red-400 rounded-full"></div>
+											</div>
+										)}
+									</div>
+								))}
+							</div>
+
+							{/* Footer */}
+							<div className="mt-3 pt-2 border-t border-neutral-700/30">
+								<div className="text-xs text-neutral-500 text-center">
+									Preview Mode • 5 participants
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

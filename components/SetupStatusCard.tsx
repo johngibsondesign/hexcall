@@ -86,18 +86,9 @@ export function SetupStatusCard({ className = "" }: SetupStatusCardProps) {
     checkSetup();
   }, []);
 
+  // Don't show anything if setup is complete
   if (issues.length === 0) {
-    return (
-      <div className={`glass rounded-xl p-4 ${className}`}>
-        <div className="flex items-center gap-3">
-          <FaCheckCircle className="w-5 h-5 text-green-400" />
-          <div>
-            <h3 className="text-sm font-medium text-green-400">Setup Complete</h3>
-            <p className="text-xs text-neutral-400">Voice chat is ready to use</p>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const errorCount = issues.filter(i => i.type === 'error').length;

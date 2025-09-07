@@ -42,8 +42,8 @@ export default function Overlay() {
     const champKeyToNameRef = useRef<Record<string, string>>({});
     const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers } = useVoice();
     
-	// Only show overlay when connected with other participants
-	const shouldShowOverlay = connected && connectedPeers && connectedPeers.length > 0;
+	// Show overlay when connected to a call (including yourself)
+	const shouldShowOverlay = connected;
     const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
     
     const theme = getOverlayTheme(currentTheme);
@@ -183,16 +183,35 @@ export default function Overlay() {
 		return () => { off && off(); };
 	}, []);
 
-	const hasData = teammates.length > 0;
+	// If we have League teammates, use them; otherwise use voice call participants
+	const voiceParticipants = useMemo(() => {
+		if (!connectedPeers) return [];
+		return connectedPeers.map(peer => ({
+			puuid: peer.id,
+			name: peer.name || peer.id.slice(0, 8),
+			displayName: peer.name || peer.id.slice(0, 8),
+			iconUrl: peer.iconUrl,
+			displayType: 'summoner' as const,
+			speaking: peer.isSelf ? isSelfSpeaking : speakingUsers?.has(peer.id),
+			volume: 1,
+			role: 'unknown' as const,
+			championName: undefined,
+			championId: undefined,
+			profileIconId: undefined
+		}));
+	}, [connectedPeers, isSelfSpeaking, speakingUsers]);
+
+	const displayParticipants = teammates.length > 0 ? teammates : voiceParticipants;
+	const hasData = displayParticipants.length > 0;
 
 	// Enhanced teammates with speaking status and role-based sorting
 	const enhancedTeammates = useMemo(() => {
 		const roleOrder = ['top', 'jungle', 'mid', 'adc', 'support', 'bottom']; // bottom is alias for adc
 		
-		const enhanced = teammates.map(tm => ({
+		const enhanced = displayParticipants.map(tm => ({
 			...tm,
-			speaking: speakingUsers?.has(tm.puuid || '') || speakingUsers?.has(tm.name || '') || false,
-							normalizedRole: tm.role === 'bottom' ? 'adc' : tm.role
+			speaking: tm.speaking || speakingUsers?.has(tm.puuid || '') || speakingUsers?.has(tm.name || '') || false,
+			normalizedRole: tm.role === 'bottom' ? 'adc' : tm.role
 		}));
 
 		// Sort by role order, with unknown roles at the end
@@ -212,7 +231,7 @@ export default function Overlay() {
 			// If neither has a valid role, sort by name
 			return (a.name || '').localeCompare(b.name || '');
 		});
-	}, [teammates, speakingUsers]);
+	}, [displayParticipants, speakingUsers]);
 
 	if (!overlayVisible) {
 		return (
@@ -306,7 +325,7 @@ export default function Overlay() {
 				{!hasData && (
 					<div className="px-1.5 py-1 text-neutral-400 text-[10px]">Overlay ready</div>
 				)}
-				{teammates.map(tm => {
+				{enhancedTeammates.map(tm => {
 					const role = tm.role || 'unknown';
 					const roleColors = {
 						'top': 'bg-blue-400',

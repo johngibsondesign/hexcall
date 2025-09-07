@@ -257,12 +257,13 @@ app.whenReady().then(() => {
 				mainWindow?.webContents.send('lcu:update', payload);
 				overlayWindow?.webContents.send('lcu:update', payload);
 			}
-			// Only show overlay when game is in progress
+			// Show overlay when game is in progress (League overlay will be handled separately for voice calls)
 			if (overlayWindow) {
 				if (phase === 'InProgress') {
 					overlayWindow.showInactive();
-				} else {
-					overlayWindow.hide();
+				} else if (phase !== 'InProgress') {
+					// Don't auto-hide overlay during non-League phases - let voice calls control it
+					// overlayWindow.hide();
 				}
 			}
 		} catch (e) {
@@ -347,6 +348,31 @@ ipcMain.handle('updates:quitAndInstall', () => {
 	} catch (err) {
 		console.error('[AutoUpdater] Quit and install failed:', err);
 	}
+});
+
+ipcMain.handle('app:set-auto-start', async (_, enabled: boolean) => {
+	try {
+		app.setLoginItemSettings({ openAtLogin: enabled });
+		return { success: true };
+	} catch (error) {
+		return { success: false, error: String(error) };
+	}
+});
+
+ipcMain.handle('overlay:show', async () => {
+	if (overlayWindow) {
+		overlayWindow.showInactive();
+		return { success: true };
+	}
+	return { success: false, error: 'Overlay window not available' };
+});
+
+ipcMain.handle('overlay:hide', async () => {
+	if (overlayWindow) {
+		overlayWindow.hide();
+		return { success: true };
+	}
+	return { success: false, error: 'Overlay window not available' };
 });
 
 
