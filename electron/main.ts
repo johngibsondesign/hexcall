@@ -3,6 +3,17 @@ import path from 'path';
 import { findLCUAuth, getGameflowPhase, getLobbyMembers, getLobby, getGameSession, getCurrentSummoner } from './lcu';
 import { autoUpdater } from 'electron-updater';
 
+// Support multiple profiles for testing (different user data directories)
+const profile = process.env.HEXCALL_PROFILE;
+if (profile) {
+  const base = app.getPath('userData');
+  app.setPath('userData', path.join(base, `profile-${profile}`));
+  console.log(`[MAIN] Using profile: ${profile}, userData: ${app.getPath('userData')}`);
+}
+
+// Store profile for IPC
+const currentProfile = profile || '';
+
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let overlayScale = 1;
@@ -393,6 +404,11 @@ ipcMain.handle('overlay:hide', async () => {
 		return { success: true };
 	}
 	return { success: false, error: 'Overlay window not available' };
+});
+
+// Get current profile for multi-instance testing
+ipcMain.handle('app:get-profile', async () => {
+	return currentProfile;
 });
 
 

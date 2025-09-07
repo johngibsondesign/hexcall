@@ -255,6 +255,13 @@ async function getCurrentSummoner(auth) {
 
 // electron/main.ts
 var import_electron_updater = require("electron-updater");
+var profile = process.env.HEXCALL_PROFILE;
+if (profile) {
+  const base = import_electron.app.getPath("userData");
+  import_electron.app.setPath("userData", import_path2.default.join(base, `profile-${profile}`));
+  console.log(`[MAIN] Using profile: ${profile}, userData: ${import_electron.app.getPath("userData")}`);
+}
+var currentProfile = profile || "";
 var mainWindow = null;
 var overlayWindow = null;
 var overlayScale = 1;
@@ -594,4 +601,7 @@ import_electron.ipcMain.handle("overlay:hide", async () => {
     return { success: true };
   }
   return { success: false, error: "Overlay window not available" };
+});
+import_electron.ipcMain.handle("app:get-profile", async () => {
+  return currentProfile;
 });

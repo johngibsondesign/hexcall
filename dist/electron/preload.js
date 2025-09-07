@@ -18,6 +18,8 @@ var preload_exports = {};
 module.exports = __toCommonJS(preload_exports);
 var import_electron = require("electron");
 import_electron.contextBridge.exposeInMainWorld("hexcall", {
+  // Expose profile for multi-instance testing
+  getProfile: () => import_electron.ipcRenderer.invoke("app:get-profile"),
   setOverlayBounds: (bounds) => import_electron.ipcRenderer.invoke("overlay:set-bounds", bounds),
   onLcuUpdate: (cb) => {
     const listener = (_e, data) => cb(data);

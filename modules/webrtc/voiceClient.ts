@@ -448,7 +448,9 @@ export class VoiceClient {
 				this.remoteAudioEls.get(peerId)?.remove();
 				this.remoteAudioEls.delete(peerId);
 				this.remoteAnalysers.delete(peerId);
-				this.onPeersChanged?.(Array.from(this.peerConnections.keys()));
+				const currentPeers = Array.from(this.peerConnections.keys());
+				console.log('[VoiceClient] Peer connection failed/disconnected, current peers:', currentPeers);
+				this.onPeersChanged?.(currentPeers);
 				
 				// If no peers left, update connection state
 				if (this.peerConnections.size === 0) {
@@ -537,9 +539,13 @@ export class VoiceClient {
 				this.onPresenceUpdate?.(peers);
 				
 				// Handle new peers - create connections to peers that joined after us
+				console.log('[VoiceClient] Processing peers for connections:', peers.map(p => p.id));
 				peers.forEach(peer => {
-					if (peer.id !== this.opts.userId && peer.id > this.opts.userId) {
+					const shouldConnect = peer.id !== this.opts.userId && peer.id > this.opts.userId;
+					console.log(`[VoiceClient] Checking peer ${peer.id} vs ${this.opts.userId}: ${shouldConnect ? 'WILL CONNECT' : 'SKIP'}`);
+					if (shouldConnect) {
 						// Only initiate connection if our ID is lexicographically smaller (prevents duplicate connections)
+						console.log(`[VoiceClient] Initiating connection to peer: ${peer.id}`);
 						this.handleNewPeer(peer.id);
 					}
 				});
@@ -705,22 +711,22 @@ export class VoiceClient {
 			this.clearReconnectTimer();
 
 			// Get user media with error handling
-			const saved = typeof window !== 'undefined' ? {
-				echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
-				noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
-				autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
-			} : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+				const saved = typeof window !== 'undefined' ? {
+					echoCancellation: localStorage.getItem('hexcall-audio-ec') !== '0',
+					noiseSuppression: localStorage.getItem('hexcall-audio-ns') !== '0',
+					autoGainControl: localStorage.getItem('hexcall-audio-agc') !== '0',
+				} : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
-			const audioConstraints: any = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
-			audioConstraints.echoCancellation = saved.echoCancellation;
-			audioConstraints.noiseSuppression = saved.noiseSuppression;
-			audioConstraints.autoGainControl = saved.autoGainControl;
+				const audioConstraints: any = this.opts.micDeviceId ? { deviceId: this.opts.micDeviceId } : {};
+				audioConstraints.echoCancellation = saved.echoCancellation;
+				audioConstraints.noiseSuppression = saved.noiseSuppression;
+				audioConstraints.autoGainControl = saved.autoGainControl;
 
-			this.stream = await navigator.mediaDevices.getUserMedia({ 
-				audio: Object.keys(audioConstraints).length ? audioConstraints : true 
-			});
-			
-			this.setupVuMeter(this.stream);
+				this.stream = await navigator.mediaDevices.getUserMedia({ 
+					audio: Object.keys(audioConstraints).length ? audioConstraints : true 
+				});
+				
+				this.setupVuMeter(this.stream);
 			
 			console.log('[VoiceClient] Successfully joined room, waiting for peers...');
 		} catch (error) {
@@ -807,7 +813,7 @@ export class VoiceClient {
 						// Process any pending ICE candidates now that we have remote description
 						await this.processPendingIceCandidates(msg.from);
 						
-						console.log(`[VoiceClient] Processed answer from ${msg.from}`);
+					console.log(`[VoiceClient] Processed answer from ${msg.from}`);
 					} else {
 						console.warn(`[VoiceClient] No peer connection found for answer from ${msg.from}`);
 					}
@@ -820,7 +826,7 @@ export class VoiceClient {
 					const pc = this.peerConnections.get(msg.from);
 					if (pc && pc.remoteDescription) {
 						await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-						console.log(`[VoiceClient] Added ICE candidate from ${msg.from}`);
+					console.log(`[VoiceClient] Added ICE candidate from ${msg.from}`);
 					} else {
 						// Queue ICE candidate for later processing
 						if (!this.pendingIceCandidates.has(msg.from)) {

@@ -66,7 +66,10 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			setSpeakingUsers(newSpeakingUsers);
 			
 			try { localStorage.setItem('hexcall-presence', JSON.stringify(ids)); } catch {}
-			try { localStorage.setItem('hexcall-presence-metas', JSON.stringify(peers)); } catch {}
+			try { 
+				console.log('[useVoiceRoom] Storing presence metas in localStorage:', JSON.stringify(peers, null, 2));
+				localStorage.setItem('hexcall-presence-metas', JSON.stringify(peers)); 
+			} catch {}
 			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids } as any)); } catch {}
 		};
 		

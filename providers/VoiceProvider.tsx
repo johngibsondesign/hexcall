@@ -28,17 +28,27 @@ type VoiceContextValue = {
 
 const VoiceContext = createContext<VoiceContextValue>({ muted: false, setMuted: () => {} });
 
-function getStableUserId(): string {
+async function getStableUserId(): Promise<string> {
+  console.log('[VoiceProvider] getStableUserId called, window available:', typeof window !== 'undefined');
   if (typeof window === 'undefined') return 'user';
   try {
-    const key = 'hexcall-user-id';
+    console.log('[VoiceProvider] Getting profile from IPC...');
+    // Include profile in the key for testing with multiple instances
+    const profile = await window.hexcall?.getProfile?.() || '';
+    console.log('[VoiceProvider] Profile received:', profile);
+    const key = profile ? `hexcall-user-id-${profile}` : 'hexcall-user-id';
+    console.log('[VoiceProvider] Using localStorage key:', key);
     let id = localStorage.getItem(key);
     if (!id) {
       id = crypto.randomUUID();
       localStorage.setItem(key, id);
+      console.log(`[VoiceProvider] Generated new user ID for profile '${profile}':`, id);
+    } else {
+      console.log(`[VoiceProvider] Using existing user ID for profile '${profile}':`, id);
     }
     return id;
-  } catch {
+  } catch (error) {
+    console.error('[VoiceProvider] Error in getStableUserId:', error);
     return 'user';
   }
 }
@@ -90,16 +100,33 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [isManualCall, setIsManualCall] = useState(false);
   const [currentGamePhase, setCurrentGamePhase] = useState<string>('Unknown');
-  const userId = useMemo(() => 'local-' + getStableUserId(), []);
+  const [userId, setUserId] = useState<string>('local-loading');
+  const [userIdReady, setUserIdReady] = useState(false);
   const [userCode, setUserCode] = useState<string>('DEMO01');
   const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
+    // Initialize user ID asynchronously
+    console.log('[VoiceProvider] Starting async user ID initialization...');
+    getStableUserId().then(id => {
+      const fullUserId = 'local-' + id;
+      console.log('[VoiceProvider] Async user ID resolved:', fullUserId);
+      setUserId(fullUserId);
+      setUserIdReady(true);
+    }).catch(error => {
+      console.error('[VoiceProvider] Error getting user ID:', error);
+      const fallbackId = 'local-fallback-' + Math.random().toString(36).substr(2, 9);
+      console.log('[VoiceProvider] Using fallback user ID:', fallbackId);
+      setUserId(fallbackId);
+      setUserIdReady(true);
+    });
+    
     // Only set the real user code on the client side to avoid hydration mismatch
     setUserCode(getUserCode());
   }, []);
 
   const { connected, join, leave, mute, speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, getUserVolumes, setPushToTalkEnabled, setPushToTalkActive, connectionStats, peerIds, updatePresence } = useVoiceRoom(roomId || 'idle', userId, micDeviceId);
+
 
   useEffect(() => {
     const offUpdate = window.hexcall?.onLcuUpdate?.((payload: any) => {
@@ -186,6 +213,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   // Manual call functions
   const createManualCall = async (): Promise<string> => {
+    if (!userIdReady) {
+      console.log('[VoiceProvider] Waiting for user ID to be ready before creating call...');
+      // Wait for user ID to be ready
+      while (!userIdReady) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
     const callRoom = `manual-${userCode}`;
     console.log('[VoiceProvider] Creating manual call room:', callRoom);
     setIsManualCall(true);
@@ -203,6 +238,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const joinByCode = async (code: string): Promise<void> => {
+    if (!userIdReady) {
+      console.log('[VoiceProvider] Waiting for user ID to be ready before joining...');
+      // Wait for user ID to be ready
+      while (!userIdReady) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
     if (!code || code.length !== 6) {
       throw new Error('Please enter a valid 6-character code');
     }
@@ -227,15 +270,35 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setIsHost(false);
   };
 
-  // Push our display meta to presence
+  // Push our display meta to presence (only when room/user/phase/host changes)
   useEffect(() => {
-    if (!roomId) return;
-    const { name, riotId } = getCachedFullDisplayName();
-    const iconUrl = getCachedIconUrl(currentGamePhase);
-    const meta: any = { userId, displayName: name, riotId, iconUrl };
+    if (!roomId || !userId || !updatePresence) return;
+    
+    // Get fresh metadata
+    let displayName = 'User';
+    let riotId = '';
+    let iconUrl = '';
+    
+    try {
+      const { name, riotId: rId } = getCachedFullDisplayName(userId);
+      const iUrl = getCachedIconUrl(currentGamePhase, userId);
+      displayName = name || 'User';
+      riotId = rId || '';
+      iconUrl = iUrl || '';
+    } catch {}
+    
+    const meta: any = { 
+      userId, 
+      displayName,
+      riotId,
+      iconUrl,
+      connected: true,
+      ts: Date.now()
+    };
     if (isHost) meta.hostId = userId;
+    console.log('[VoiceProvider] Updating presence with user meta:', JSON.stringify(meta, null, 2));
     try { updatePresence?.(meta); } catch {}
-  }, [roomId, userId, currentGamePhase, isHost, updatePresence]);
+  }, [roomId, userId, currentGamePhase, isHost]);
 
   const banUser = (targetId: string) => {
     if (!roomId || !isHost) return;
@@ -264,13 +327,22 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     
     // Add yourself first if connected
     if (connected) {
-      const { name: selfName, riotId } = getCachedFullDisplayName();
-      const selfIconUrl = getCachedIconUrl(currentGamePhase); // Use phase-aware icon
+      let selfName = 'User';
+      let selfRiotId = '';
+      let selfIconUrl = '';
+      
+      try {
+        const { name, riotId } = getCachedFullDisplayName(userId);
+        const iconUrl = getCachedIconUrl(currentGamePhase, userId);
+        selfName = name || 'User';
+        selfRiotId = riotId || '';
+        selfIconUrl = iconUrl || '';
+      } catch {}
       
       peers.push({
         id: userId,
         name: selfName,
-        riotId: riotId,
+        riotId: selfRiotId,
         iconUrl: selfIconUrl,
         isSelf: true
       });
@@ -279,20 +351,42 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     // Load presence metas to enrich other peers
     let metaMap: Record<string, any> = {};
     try {
-      const metas = JSON.parse(localStorage.getItem('hexcall-presence-metas') || '[]');
-      metaMap = (metas || []).reduce((acc: any, p: any) => { acc[p.id] = p.meta || {}; return acc; }, {});
-    } catch {}
+      const metasRaw = localStorage.getItem('hexcall-presence-metas') || '[]';
+      console.log('[VoiceProvider] Raw presence metas from localStorage:', metasRaw);
+      const metas = JSON.parse(metasRaw);
+      console.log('[VoiceProvider] Parsed presence metas:', metas);
+      metaMap = (metas || []).reduce((acc: any, p: any) => { 
+        console.log('[VoiceProvider] Processing meta for peer:', p);
+        // Handle both nested meta structure and direct structure
+        const peerMeta = p.meta || p;
+        acc[p.id] = peerMeta; 
+        return acc; 
+      }, {});
+      console.log('[VoiceProvider] Final metaMap:', metaMap);
+    } catch (e) {
+      console.error('[VoiceProvider] Error loading presence metas:', e);
+    }
 
     // Add other peers
     const otherPeers = (peerIds || [])
       .filter(id => id !== userId)
-      .map(id => ({ 
-        id,
-        name: (metaMap[id]?.displayName) || (id.includes('local-') ? 'User' : id.slice(0, 8)),
-        riotId: metaMap[id]?.riotId,
-        iconUrl: metaMap[id]?.iconUrl,
-        isSelf: false
-      }));
+      .map(id => {
+        console.log(`[VoiceProvider] Building peer ${id}:`, {
+          metaExists: !!metaMap[id],
+          meta: metaMap[id],
+          metaKeys: metaMap[id] ? Object.keys(metaMap[id]) : [],
+          displayName: metaMap[id]?.displayName,
+          riotId: metaMap[id]?.riotId,
+          iconUrl: metaMap[id]?.iconUrl
+        });
+        return { 
+          id,
+          name: (metaMap[id]?.displayName) || (id.includes('local-') ? 'User' : id.slice(0, 8)),
+          riotId: metaMap[id]?.riotId,
+          iconUrl: metaMap[id]?.iconUrl,
+          isSelf: false
+        };
+      });
     
     peers.push(...otherPeers);
     

@@ -3,6 +3,7 @@ export {};
 declare global {
 	interface Window {
 		hexcall?: {
+			getProfile: () => Promise<string>;
 			setOverlayBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 			onLcuUpdate?: (cb: (payload: any) => void) => () => void;
 			onHotkeyToggleMute?: (cb: () => void) => () => void;

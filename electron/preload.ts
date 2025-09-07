@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('hexcall', {
+	// Expose profile for multi-instance testing
+	getProfile: () => ipcRenderer.invoke('app:get-profile'),
 	setOverlayBounds: (bounds: Electron.Rectangle) => ipcRenderer.invoke('overlay:set-bounds', bounds),
 	onLcuUpdate: (cb: (payload: any) => void) => {
 		const listener = (_e: any, data: any) => cb(data);
