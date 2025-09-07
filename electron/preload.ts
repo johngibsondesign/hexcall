@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('hexcall', {
 	onUpdateNone: (cb: (info: any) => void) => { const l = (_: any, i: any) => cb(i); ipcRenderer.on('updates:none', l); return () => ipcRenderer.removeListener('updates:none', l); },
 	onUpdateProgress: (cb: (p: any) => void) => { const l = (_: any, p: any) => cb(p); ipcRenderer.on('updates:progress', l); return () => ipcRenderer.removeListener('updates:progress', l); },
 	onUpdateDownloaded: (cb: (info: any) => void) => { const l = (_: any, i: any) => cb(i); ipcRenderer.on('updates:downloaded', l); return () => ipcRenderer.removeListener('updates:downloaded', l); },
+	onUpdateError: (cb: (error: any) => void) => { const l = (_: any, e: any) => cb(e); ipcRenderer.on('updates:error', l); return () => ipcRenderer.removeListener('updates:error', l); },
 });
 
 export {};

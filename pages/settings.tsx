@@ -260,6 +260,18 @@ export default function Settings() {
 		const offUpdateDownloaded = window.hexcall.onUpdateDownloaded?.(() => {
 			setUpdateStatus('downloaded');
 			setDownloadProgress(100);
+			
+			// Show confirmation dialog for auto-install
+			const autoInstall = confirm('Update downloaded successfully! Would you like to install and restart the app now?');
+			if (autoInstall) {
+				installUpdate();
+			}
+		});
+
+		const offUpdateError = window.hexcall.onUpdateError?.((error: any) => {
+			console.error('Update error:', error);
+			setUpdateStatus('idle');
+			setDownloadProgress(0);
 		});
 
 		return () => {
@@ -267,6 +279,7 @@ export default function Settings() {
 			offUpdateAvailable?.();
 			offUpdateProgress?.();
 			offUpdateDownloaded?.();
+			offUpdateError?.();
 		};
 	}, []);
 
@@ -285,17 +298,41 @@ export default function Settings() {
 
 	const downloadUpdate = async () => {
 		try {
-			await window.hexcall?.updatesDownload?.();
+			setUpdateStatus('downloading');
+			setDownloadProgress(0);
+			const result = await window.hexcall?.updatesDownload?.();
+			
+			if (result && !result.success) {
+				console.error('Download failed:', result.error);
+				setUpdateStatus('available');
+				alert('Failed to download update: ' + result.error);
+			}
 		} catch (error) {
 			console.error('Failed to download update:', error);
+			setUpdateStatus('available'); // Reset to available state on error
+			alert('Failed to download update. Please check your internet connection and try again.');
 		}
 	};
 
 	const installUpdate = async () => {
 		try {
-			await window.hexcall?.updatesQuitAndInstall?.();
+			console.log('Installing update and restarting...');
+			
+			// Show user that installation is starting
+			setUpdateStatus('installing' as any); // Temporary status for UI feedback
+			
+			const result = await window.hexcall?.updatesQuitAndInstall?.();
+			
+			if (result && !result.success) {
+				console.error('Install failed:', result.error);
+				setUpdateStatus('downloaded'); // Reset to downloaded state
+				alert('Failed to install update: ' + result.error);
+			}
+			// If successful, app will restart automatically
 		} catch (error) {
 			console.error('Failed to install update:', error);
+			setUpdateStatus('downloaded'); // Reset to downloaded state
+			alert('Failed to install update. Please try again or download manually.');
 		}
 	};
 
@@ -810,6 +847,16 @@ export default function Settings() {
 										Install & Restart
 									</button>
 								)}
+								
+								{updateStatus === 'installing' && (
+									<button
+										disabled
+										className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-xl text-sm font-medium border border-purple-500/30 opacity-75 cursor-not-allowed"
+									>
+										<FaSpinner className="animate-spin w-4 h-4" />
+										Installing...
+									</button>
+								)}
 							</div>
 							
 							{updateStatus === 'downloading' && (
@@ -833,6 +880,7 @@ export default function Settings() {
 									<span>🚀 Update available: v{updateInfo.version}</span>
 								)}
 								{updateStatus === 'downloaded' && '⚡ Update ready to install'}
+								{updateStatus === 'installing' && '🔄 Installing update and restarting app...'}
 								{updateStatus === 'idle' && '🔍 Click "Check Updates" to see if a new version is available'}
 							</div>
 						</div>

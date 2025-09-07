@@ -17,8 +17,8 @@ declare global {
 			windowMaximizeToggle?: () => void;
 			windowIsMaximized?: () => Promise<boolean>;
 			updatesCheck?: () => void;
-			updatesDownload?: () => void;
-			updatesQuitAndInstall?: () => void;
+			updatesDownload?: () => Promise<{ success: boolean; error?: string }>;
+			updatesQuitAndInstall?: () => Promise<{ success: boolean; error?: string }>;
 			setAutoStart?: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
 			showOverlay?: () => Promise<{ success: boolean; error?: string }>;
 			hideOverlay?: () => Promise<{ success: boolean; error?: string }>;
@@ -26,6 +26,7 @@ declare global {
 			onUpdateNone?: (cb: (info: any) => void) => () => void;
 			onUpdateProgress?: (cb: (p: any) => void) => () => void;
 			onUpdateDownloaded?: (cb: (info: any) => void) => () => void;
+			onUpdateError?: (cb: (error: any) => void) => () => void;
 		};
 	}
 }

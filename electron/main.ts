@@ -121,18 +121,31 @@ app.whenReady().then(() => {
 
 	// auto-updater
 	autoUpdater.autoDownload = false;
+	autoUpdater.autoInstallOnAppQuit = true;
+	
 	autoUpdater.on('update-available', (info) => {
 		console.log('[AutoUpdater] Update available:', info.version);
 		mainWindow?.webContents.send('updates:available', info);
 	});
+	
 	autoUpdater.on('update-not-available', (info) => {
+		console.log('[AutoUpdater] No update available');
 		mainWindow?.webContents.send('updates:none', info);
 	});
-	autoUpdater.on('download-progress', (p) => {
-		mainWindow?.webContents.send('updates:progress', p);
+	
+	autoUpdater.on('download-progress', (progress) => {
+		console.log('[AutoUpdater] Download progress:', progress.percent + '%');
+		mainWindow?.webContents.send('updates:progress', progress);
 	});
+	
 	autoUpdater.on('update-downloaded', (info) => {
+		console.log('[AutoUpdater] Update downloaded, ready to install');
 		mainWindow?.webContents.send('updates:downloaded', info);
+	});
+	
+	autoUpdater.on('error', (error) => {
+		console.error('[AutoUpdater] Error:', error);
+		mainWindow?.webContents.send('updates:error', { error: error.message });
 	});
 
 	globalShortcut.register('CommandOrControl+Shift+H', () => {
@@ -335,18 +348,25 @@ ipcMain.handle('updates:check', async () => {
 ipcMain.handle('updates:download', async () => {
 	try { 
 		console.log('[AutoUpdater] Manual download requested');
-		await autoUpdater.downloadUpdate(); 
+		await autoUpdater.downloadUpdate();
+		return { success: true };
 	} catch (err) {
 		console.error('[AutoUpdater] Manual download failed:', err);
+		return { success: false, error: String(err) };
 	}
 });
 
-ipcMain.handle('updates:quitAndInstall', () => {
+ipcMain.handle('updates:quitAndInstall', async () => {
 	try { 
 		console.log('[AutoUpdater] Quit and install requested');
-		autoUpdater.quitAndInstall(); 
+		// Give a small delay to allow UI to update
+		setTimeout(() => {
+			autoUpdater.quitAndInstall();
+		}, 1000);
+		return { success: true };
 	} catch (err) {
 		console.error('[AutoUpdater] Quit and install failed:', err);
+		return { success: false, error: String(err) };
 	}
 });
 
