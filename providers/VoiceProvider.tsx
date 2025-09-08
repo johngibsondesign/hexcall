@@ -454,16 +454,19 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     return () => off?.();
   }, [setPushToTalkActive]);
 
-  // Show/hide overlay based on voice call connection
+  // Show/hide overlay based on voice call connection or game state
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    if (connected) {
+    // Show overlay if connected to voice OR if game is in progress
+    const shouldShowOverlay = connected || currentGamePhase === 'InProgress';
+    
+    if (shouldShowOverlay) {
       window.hexcall?.showOverlay?.();
     } else {
       window.hexcall?.hideOverlay?.();
     }
-  }, [connected]);
+  }, [connected, currentGamePhase]);
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }

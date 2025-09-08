@@ -50,7 +50,23 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 		client.onPresenceUpdate = (peers: { id: string; meta?: any }[]) => {
 			console.log('[useVoiceRoom] Presence update for room:', roomId, 'userId:', userId, 'peers:', peers);
 			
-			const ids = peers.map(p => p.id);
+			// Check for banned users and filter them out for manual calls
+			let filteredPeers = peers;
+			if (roomId.startsWith('manual-')) {
+				try {
+					const banListKey = `hexcall-banlist-${roomId}`;
+					const banList: string[] = JSON.parse(localStorage.getItem(banListKey) || '[]');
+					filteredPeers = peers.filter(peer => !banList.includes(peer.id));
+					
+					if (filteredPeers.length !== peers.length) {
+						console.log('[useVoiceRoom] Filtered banned users from presence:', banList);
+					}
+				} catch (error) {
+					console.warn('[useVoiceRoom] Error checking ban list:', error);
+				}
+			}
+			
+			const ids = filteredPeers.map(p => p.id);
 			console.log('[useVoiceRoom] Setting peerIds to:', ids);
 			setPeerIds(ids);
 			// Allow joining even if alone; mesh forms when others join
@@ -58,7 +74,7 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			
 			// Update speaking users based on presence metadata
 			const newSpeakingUsers = new Set<string>();
-			peers.forEach(peer => {
+			filteredPeers.forEach(peer => {
 				if (peer.meta?.speaking && peer.id !== userId) {
 					newSpeakingUsers.add(peer.id);
 				}
@@ -67,8 +83,8 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			
 			try { localStorage.setItem('hexcall-presence', JSON.stringify(ids)); } catch {}
 			try { 
-				console.log('[useVoiceRoom] Storing presence metas in localStorage:', JSON.stringify(peers, null, 2));
-				localStorage.setItem('hexcall-presence-metas', JSON.stringify(peers)); 
+				console.log('[useVoiceRoom] Storing presence metas in localStorage:', JSON.stringify(filteredPeers, null, 2));
+				localStorage.setItem('hexcall-presence-metas', JSON.stringify(filteredPeers)); 
 			} catch {}
 			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids } as any)); } catch {}
 		};

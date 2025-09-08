@@ -241,8 +241,11 @@ app.whenReady().then(() => {
 	});
 
 
-	// basic poller for LCU state
-	setInterval(async () => {
+	// Dynamic poller for LCU state with faster polling when summoner data is missing
+	let lastSummonerDataCheck: boolean = false;
+	let pollInterval = 5000; // Default 5 seconds
+	
+	const pollLCUState = async () => {
 		const auth = findLCUAuth();
 		if (!auth) {
 			// Debug: Log only in development
@@ -273,13 +276,27 @@ app.whenReady().then(() => {
 			if (process.env.NODE_ENV === 'development') {
 				console.log('[LCU] API results:', { phase, membersCount: members.length, hasLobby: !!lobby, hasSession: !!session, hasSelf: !!self });
 			}
-			// Dedupe payloads to avoid spamming renderer
+			// Dedupe payloads to avoid spamming renderer, but force updates when summoner data is incomplete
 			const payload = { phase, members, lobby, session, self };
 			const nextPayloadKey = JSON.stringify(payload);
-			if (nextPayloadKey !== lastLcuPayload) {
-				lastLcuPayload = nextPayloadKey;
+			
+			// Check if summoner data is missing and we should force an update
+			const hasSummonerData = self && (self.summonerName || self.gameName) && self.profileIconId;
+			const shouldForceUpdate = !hasSummonerData && ['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect', 'InProgress'].includes(phase);
+			
+			// Update the summoner data check for polling frequency adjustment
+			lastSummonerDataCheck = !!hasSummonerData;
+			
+			if (nextPayloadKey !== lastLcuPayload || shouldForceUpdate) {
+				if (!shouldForceUpdate) {
+					lastLcuPayload = nextPayloadKey;
+				}
 				mainWindow?.webContents.send('lcu:update', payload);
 				overlayWindow?.webContents.send('lcu:update', payload);
+				
+				if (shouldForceUpdate && process.env.NODE_ENV === 'development') {
+					console.log('[LCU] Forcing update due to incomplete summoner data:', { hasSummonerData, phase });
+				}
 			}
 			// Show overlay when game is in progress (League overlay will be handled separately for voice calls)
 			if (overlayWindow) {
@@ -294,7 +311,27 @@ app.whenReady().then(() => {
 			mainWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
 			overlayWindow?.webContents.send('lcu:update', { phase: 'Error', members: [], lobby: null, session: null, error: String(e) });
 		}
-	}, 5000);
+		
+		// Adjust polling interval based on summoner data availability
+		const currentHasSummonerData = lastSummonerDataCheck;
+		if (!currentHasSummonerData && pollInterval > 1000) {
+			pollInterval = 1000; // Poll every 1 second when missing data
+			if (process.env.NODE_ENV === 'development') {
+				console.log('[LCU] Increasing poll frequency due to missing summoner data');
+			}
+		} else if (currentHasSummonerData && pollInterval < 5000) {
+			pollInterval = 5000; // Return to normal 5 second polling
+			if (process.env.NODE_ENV === 'development') {
+				console.log('[LCU] Returning to normal poll frequency');
+			}
+		}
+		
+		// Schedule next poll
+		setTimeout(pollLCUState, pollInterval);
+	};
+	
+	// Start polling
+	pollLCUState();
 });
 
 app.on('window-all-closed', () => {

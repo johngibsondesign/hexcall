@@ -15,7 +15,9 @@ import {
 	FaQuestion,
 	FaVolumeHigh,
 	FaVolumeLow,
-	FaVolumeXmark
+	FaVolumeXmark,
+	FaBan,
+	FaUserXmark
 } from 'react-icons/fa6';
 import { RoleIcon } from '../components/RoleIcon';
 import { ChampionIconWithPreview } from '../components/ChampionIcon';
@@ -57,7 +59,10 @@ export default function Home() {
 		setUserVolume, 
 		getUserVolume, 
 		connectionStats,
-		connectedPeers
+		connectedPeers,
+		isHost,
+		banUser,
+		kickUser
 	} = useVoice();
 	const [gameState, setGameState] = useState<string>('Waiting for League...');
 	const [teammates, setTeammates] = useState<Teammate[]>([]);
@@ -200,13 +205,25 @@ export default function Home() {
 						setSwitchCountdown(10);
 					}
 				}
+			} else if (!isInManualCall && allowedPhases.includes(phase) && members.length >= 2 && !connected) {
+				// Show rejoin option for League calls when not connected and not in manual call
+				const leagueRoomId = members.map(m => m.puuid || m.summonerId || '').filter(Boolean).sort().join('-').slice(0, 32);
+				
+				if (leagueRoomId) {
+					setAvailableLeagueCall({
+						roomId: leagueRoomId,
+						memberCount: members.length
+					});
+				} else {
+					setAvailableLeagueCall(null);
+				}
 			} else {
 				// Clear available League call if conditions not met
 				setAvailableLeagueCall(null);
 			}
 		});
 		return () => { off && off(); };
-	}, [showCallSwitchModal]);
+	}, [showCallSwitchModal, connected]);
 
 	const inLobbyOrGame = useMemo(() => {
 		const phase = typeof gamePhase === 'string' ? gamePhase : '';
@@ -358,9 +375,15 @@ export default function Home() {
 		
 		// Leave current manual call and join League call
 		try {
-			await leaveCall?.();
-			// The VoiceProvider will automatically join the League call
-			// since we're no longer in a manual call
+			if (joinedRoomId?.startsWith('manual-')) {
+				// If in manual call, leave it first
+				await leaveCall?.();
+				// The VoiceProvider will automatically join the League call
+				// since we're no longer in a manual call
+			} else {
+				// If not connected, directly join the League call
+				await joinCall?.(true);
+			}
 		} catch (error) {
 			console.error('Failed to switch to League call:', error);
 		}
@@ -566,14 +589,49 @@ export default function Home() {
 													{/* Volume Control - Show when selected and not you */}
 													{!isYou && isSelected && (
 														<div className="pt-3 border-t border-neutral-700/50">
-															<div className="space-y-2">
+															<div className="space-y-3">
 																<div className="text-xs text-neutral-400 font-medium">Volume Control</div>
-													<VolumeSlider
-														userId={peer.id}
-														initialVolume={getUserVolume?.(peer.id) ?? 1.0}
-														onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
-														size="sm"
-													/>
+																<VolumeSlider
+																	userId={peer.id}
+																	initialVolume={getUserVolume?.(peer.id) ?? 1.0}
+																	onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
+																	size="sm"
+																/>
+																
+																{/* Host Controls - Show only for manual calls when user is host */}
+																{isHost && joinedRoomId?.startsWith('manual-') && (
+																	<div className="space-y-2">
+																		<div className="text-xs text-neutral-400 font-medium">Host Controls</div>
+																		<div className="flex gap-2">
+																			<button
+																				onClick={(e) => {
+																					e.stopPropagation();
+																					if (confirm(`Kick ${displayName} from the call?`)) {
+																						kickUser?.(peer.id);
+																					}
+																				}}
+																				className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 text-xs rounded-lg transition-colors"
+																				title={`Kick ${displayName}`}
+																			>
+																				<FaUserXmark className="w-3 h-3" />
+																				<span>Kick</span>
+																			</button>
+																			<button
+																				onClick={(e) => {
+																					e.stopPropagation();
+																					if (confirm(`Ban ${displayName} from the call? They won't be able to rejoin.`)) {
+																						banUser?.(peer.id);
+																					}
+																				}}
+																				className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs rounded-lg transition-colors"
+																				title={`Ban ${displayName}`}
+																			>
+																				<FaBan className="w-3 h-3" />
+																				<span>Ban</span>
+																			</button>
+																		</div>
+																	</div>
+																)}
 															</div>
 														</div>
 													)}

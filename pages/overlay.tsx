@@ -38,12 +38,13 @@ export default function Overlay() {
 	const [teammates, setTeammates] = useState<Teammate[]>([]);
 	const [overlayVisible, setOverlayVisible] = useState(true);
 	const [currentTheme, setCurrentTheme] = useState('default');
+	const [gamePhase, setGamePhase] = useState<string>('Unknown');
 	const containerRef = useRef<HTMLDivElement>(null);
     const champKeyToNameRef = useRef<Record<string, string>>({});
     const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers } = useVoice();
     
-	// Show overlay when connected to a call (including yourself)
-	const shouldShowOverlay = connected;
+	// Show overlay when connected to a call OR when game is in progress
+	const shouldShowOverlay = connected || gamePhase === 'InProgress';
     const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
     
     const theme = getOverlayTheme(currentTheme);
@@ -99,6 +100,7 @@ export default function Overlay() {
 			const members: Teammate[] = payload?.members || [];
 			const sessionTeam = payload?.session?.gameData?.playerChampionSelections || [];
 			const phase: string = payload?.phase || '';
+			setGamePhase(phase);
 			let ddVer = payload?.session?.gameData?.gameDeltas?.clientVersion || payload?.session?.gameData?.gameVersion || DEFAULT_DD_VER;
 
 			// fetch champion mapping once if in game and not present
