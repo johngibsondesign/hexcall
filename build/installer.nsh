@@ -1,6 +1,7 @@
 !macro preInit
   !echo "[Hexcall NSIS] preInit"
-  BrandingText "Hexcall — League Voice Overlay"
+  ; BrandingText is not valid inside functions; set at runtime instead
+  SetBrandingText "Hexcall — League Voice Overlay"
 !macroend
 
 !macro customWelcomePage
@@ -25,4 +26,3 @@
 !macro customUnInit
   !echo "[Hexcall NSIS] customUnInit"
 !macroend
-
