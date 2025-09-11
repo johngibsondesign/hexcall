@@ -1,7 +1,6 @@
 !macro preInit
   !echo "[Hexcall NSIS] preInit"
-  ; BrandingText is not valid inside functions; set at runtime instead
-  SetBrandingText "Hexcall — League Voice Overlay"
+  ; Branding text customization disabled for compatibility with NSIS template
 !macroend
 
 !macro customWelcomePage
