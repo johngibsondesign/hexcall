@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('hexcall', {
 	pushToTalkSimulateRelease: () => ipcRenderer.send('push-to-talk:simulate-release'),
 	setOverlayScale: (scale: number) => ipcRenderer.invoke('overlay:set-scale', scale),
 	setOverlayCorner: (corner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => ipcRenderer.invoke('overlay:set-corner', corner),
+	setOverlayInteractive: (interactive: boolean) => ipcRenderer.invoke('overlay:set-interactive', interactive),
 	windowMinimize: () => ipcRenderer.invoke('window:minimize'),
 	windowClose: () => ipcRenderer.invoke('window:close'),
 	windowMaximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),

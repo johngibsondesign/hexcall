@@ -324,9 +324,7 @@ export default function Overlay() {
 			}}
 		>
 			<div className="flex flex-col gap-1 items-center">
-				{!hasData && (
-					<div className="px-1.5 py-1 text-neutral-400 text-[10px]">Overlay ready</div>
-				)}
+				{/* Minimal overlay: icons only */}
 				{enhancedTeammates.map(tm => {
 					const role = tm.role || 'unknown';
 					const roleColors = {
@@ -413,58 +411,6 @@ export default function Overlay() {
 							{tm.speaking && (
 								<div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-neutral-900 animate-pulse" />
 							)}
-							
-													<div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-								<div className="pointer-events-auto bg-neutral-950/80 backdrop-blur-sm border border-neutral-800/60 rounded-xl p-3 shadow-xl flex flex-col items-center gap-3 min-w-[140px]">
-									<div className="text-xs text-white font-medium text-center truncate max-w-[120px]">
-										{tm.displayName || tm.name}
-									</div>
-									{tm.displayType === 'champion' && tm.name !== tm.displayName && (
-										<div className="text-[10px] text-neutral-400 text-center truncate max-w-[120px]">
-											{tm.name}
-										</div>
-									)}
-									
-									<CompactVolumeSlider
-										userId={tm.puuid || tm.name || ''}
-										initialVolume={getUserVolume?.(tm.puuid || tm.name || '') ?? 1.0}
-										onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
-									/>
-									
-									<div className="flex gap-2">
-										<button 
-											className="w-7 h-7 rounded-full chip flex items-center justify-center hover:bg-red-500/20" 
-											aria-label="Mute user"
-											onClick={() => setUserVolume?.(tm.puuid || tm.name || '', 0)}
-										>
-											<FaVolumeMute className="w-3 h-3" />
-										</button>
-										<button 
-											className="w-7 h-7 rounded-full chip flex items-center justify-center hover:bg-yellow-500/20" 
-											aria-label="Ping"
-										>
-											<FaExclamation className="w-3 h-3" />
-										</button>
-									</div>
-									
-									<div className="flex gap-2">
-										<button 
-											className="w-7 h-7 rounded-full chip flex items-center justify-center hover:bg-green-500/20" 
-											aria-label="Join" 
-											onClick={() => (window as any).__hexcall_join?.()}
-										>
-											<FaPhone className="w-3 h-3" />
-										</button>
-										<button 
-											className="w-7 h-7 rounded-full chip flex items-center justify-center hover:bg-red-500/20" 
-											aria-label="Leave" 
-											onClick={() => (window as any).__hexcall_leave?.()}
-										>
-											<FaPhoneSlash className="w-3 h-3" />
-										</button>
-									</div>
-								</div>
-							</div>
 					</div>
 					);
 				})}

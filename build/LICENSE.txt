@@ -1,0 +1,12 @@
+Hexcall End‑User License Agreement (EULA)
+
+By installing or using Hexcall (the "Software"), you agree to the following terms:
+
+1. License. You are granted a non‑exclusive, non‑transferable license to install and use the Software.
+2. Ownership. The Software is provided as‑is without warranties of any kind. All rights reserved by its authors.
+3. Data. Voice connections may rely on third‑party services. You are responsible for your usage and compliance with their terms.
+4. Liability. In no event shall the authors be liable for any damages arising from the use of the Software.
+5. Updates. The Software may update automatically. You consent to receiving updates.
+
+If you do not agree to these terms, do not install or use the Software.
+

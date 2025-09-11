@@ -19,6 +19,7 @@ let overlayWindow: BrowserWindow | null = null;
 let overlayScale = 1;
 let overlayCorner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' = 'top-right';
 let lastLcuPayload: string | null = null;
+let overlayInteractive = true;
 
 function createMainWindow() {
 	mainWindow = new BrowserWindow({
@@ -71,6 +72,8 @@ function createOverlayWindow() {
 		resizable: true,
 		skipTaskbar: true,
 		backgroundColor: '#00000000',
+		focusable: false,
+		acceptFirstMouse: true,
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
 			contextIsolation: true,
@@ -90,7 +93,7 @@ function createOverlayWindow() {
 		console.log('[OVERLAY] Loading overlay window from:', overlayPath);
 		overlayWindow.loadFile(overlayPath);
 	}
-	overlayWindow.setAlwaysOnTop(true, 'floating');
+	overlayWindow.setAlwaysOnTop(true, 'screen-saver');
 	overlayWindow.setVisibleOnAllWorkspaces(true);
 	const { width, height } = overlayWindow.getBounds();
 	positionOverlay(width, height);
@@ -130,9 +133,9 @@ app.whenReady().then(() => {
 	createMainWindow();
 	createOverlayWindow();
 
-	// auto-updater
-	autoUpdater.autoDownload = false;
-	autoUpdater.autoInstallOnAppQuit = true;
+    // auto-updater
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
 	
 	autoUpdater.on('update-available', (info) => {
 		console.log('[AutoUpdater] Update available:', info.version);
@@ -366,6 +369,15 @@ ipcMain.handle('overlay:set-corner', (_e, corner: 'top-right' | 'top-left' | 'bo
 	positionOverlay(width, height);
 });
 
+ipcMain.handle('overlay:set-interactive', (_e, interactive: boolean) => {
+	overlayInteractive = !!interactive;
+	if (!overlayWindow) return;
+	try {
+        // When not interactive, ignore mouse events so it doesn't block clicks
+        overlayWindow.setIgnoreMouseEvents(!overlayInteractive, { forward: true });
+    } catch {}
+});
+
 // Window controls
 ipcMain.handle('window:minimize', () => {
 	mainWindow?.minimize();
@@ -409,7 +421,7 @@ ipcMain.handle('updates:quitAndInstall', async () => {
 		console.log('[AutoUpdater] Quit and install requested');
 		// Give a small delay to allow UI to update
 		setTimeout(() => {
-			autoUpdater.quitAndInstall();
+			autoUpdater.quitAndInstall(true, true);
 		}, 1000);
 		return { success: true };
 	} catch (err) {

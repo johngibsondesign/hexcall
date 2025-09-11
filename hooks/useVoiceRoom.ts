@@ -36,6 +36,13 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			setConnectionStats(stats);
 		};
 
+		// Connection state changes (for reconnect + notifications)
+		client.onConnectionStateChange = (state: string) => {
+			const isConnected = state === 'connected';
+			setConnected(isConnected);
+			try { window.dispatchEvent(new CustomEvent('hexcall:voice-state', { detail: state } as any)); } catch {}
+		};
+
 		// When peer map changes (connections established/removed), update peerIds for UI
 		client.onPeersChanged = (ids: string[]) => {
 			console.log('[useVoiceRoom] onPeersChanged ->', ids);
@@ -170,5 +177,4 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 		connectionStats
 	};
 }
-
 

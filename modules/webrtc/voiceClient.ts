@@ -558,10 +558,14 @@ export class VoiceClient {
 	}
 
 	private updateConnectionState(state: 'disconnected' | 'connecting' | 'connected' | 'failed') {
-		if (this.connectionState !== state) {
-			this.connectionState = state;
-			this.onConnectionStateChange?.(state);
-		}
+    if (this.connectionState !== state) {
+        this.connectionState = state;
+        this.onConnectionStateChange?.(state);
+        // Auto-reconnect on drop unless fully destroyed/cleaned
+        if ((state === 'failed' || state === 'disconnected') && !this.isDestroyed) {
+            this.tryReconnect();
+        }
+    }
 	}
 
 	private handleError(error: Error) {

@@ -24,6 +24,8 @@ import { ChampionIconWithPreview } from '../components/ChampionIcon';
 import { VolumeSlider } from '../components/VolumeSlider';
 import { ConnectionQualityIndicator } from '../components/ConnectionQualityIndicator';
 import { DebugInfo } from '../components/DebugInfo';
+import { ToastContainer, useToast } from '../components/Toast';
+import { playSound } from '../lib/sounds';
 import { OnboardingWizard } from '../components/OnboardingWizard';
 import { VoiceControlPanel } from '../components/VoiceControlPanel';
 import { SetupStatusCard } from '../components/SetupStatusCard';
@@ -85,6 +87,8 @@ export default function Home() {
 	const [masterVolume, setMasterVolume] = useState(1.0);
 	const [microphoneGain, setMicrophoneGain] = useState(1.0);
 	const [autoJoinEnabled, setAutoJoinEnabled] = useState(true);
+	const { toasts, showInfo, showSuccess, showError, removeToast } = useToast();
+	const lastVoiceStateRef = useRef<string>('');
 
 	// Load push-to-talk settings and check onboarding
 	useEffect(() => {
@@ -378,8 +382,9 @@ export default function Home() {
 			if (joinedRoomId?.startsWith('manual-')) {
 				// If in manual call, leave it first
 				await leaveCall?.();
-				// The VoiceProvider will automatically join the League call
-				// since we're no longer in a manual call
+				// Ensure join happens reliably
+				await new Promise(r => setTimeout(r, 200));
+				await joinCall?.(true);
 			} else {
 				// If not connected, directly join the League call
 				await joinCall?.(true);
@@ -420,6 +425,26 @@ export default function Home() {
 		// This would need to be implemented in the voice provider
 		// For now, we'll just store the value
 	};
+
+	// Voice connection state notifications
+	useEffect(() => {
+		const handler = (e: any) => {
+			const state = e?.detail as string;
+			const prev = lastVoiceStateRef.current;
+			lastVoiceStateRef.current = state;
+			if (state === 'connecting') {
+				showInfo('Reconnecting…');
+				try { playSound('reconnect'); } catch {}
+			} else if (state === 'connected' && (prev === 'failed' || prev === 'disconnected' || prev === 'connecting')) {
+				showSuccess('Reconnected');
+			} else if (state === 'failed' || state === 'disconnected') {
+				showError('Connection lost', 'Attempting to reconnect…');
+				try { playSound('reconnect_failed'); } catch {}
+			}
+		};
+		window.addEventListener('hexcall:voice-state', handler as any);
+		return () => window.removeEventListener('hexcall:voice-state', handler as any);
+	}, [showInfo, showSuccess, showError]);
 
 	return (
 		<div className={`bg-hextech flex flex-col h-full ${connected && joinedRoomId ? 'pb-16' : ''}`}>
@@ -834,6 +859,9 @@ export default function Home() {
 					onClose={() => setShowQuickStart(false)}
 				/>
 			)}
+
+			{/* Toasts */}
+			<ToastContainer toasts={toasts} onRemove={removeToast} />
 
 			{/* Call Switch Modal */}
 			{showCallSwitchModal && availableLeagueCall && (

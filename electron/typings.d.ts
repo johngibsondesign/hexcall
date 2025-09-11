@@ -13,6 +13,7 @@ declare global {
 			pushToTalkSimulateRelease?: () => void;
 			setOverlayScale?: (scale: number) => void;
 			setOverlayCorner?: (corner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => void;
+			setOverlayInteractive?: (interactive: boolean) => void;
 			windowMinimize?: () => void;
 			windowClose?: () => void;
 			windowMaximizeToggle?: () => void;

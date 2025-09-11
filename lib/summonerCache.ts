@@ -126,8 +126,8 @@ export function getCachedIconUrl(currentPhase?: string): string | undefined {
   const cached = getCachedSummonerData();
   if (!cached) return undefined;
   
-  // Use champion icon if in game and we have champion data
-  if (currentPhase === 'InProgress' && cached.championName) {
+  // Use champion icon if in champ select or in game and we have champion data
+  if ((currentPhase === 'ChampSelect' || currentPhase === 'InProgress') && cached.championName) {
     return getCachedChampionIconUrl();
   }
   

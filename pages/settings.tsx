@@ -19,6 +19,7 @@ export default function Settings() {
 	const [level, setLevel] = useState(0);
 	const [corner, setCorner] = useState<Corner>('top-right');
 	const [scale, setScale] = useState<number>(1);
+    const [overlayLocked, setOverlayLocked] = useState<boolean>(false);
 	const [echoCancellation, setEchoCancellation] = useState(true);
 	const [noiseSuppression, setNoiseSuppression] = useState(true);
 	const [autoGainControl, setAutoGainControl] = useState(true);
@@ -68,6 +69,8 @@ export default function Settings() {
 			if (vad !== null) setVadThreshold(Number(vad));
 			const startup = localStorage.getItem('hexcall-start-on-boot');
 			if (startup !== null) setStartOnSystemStart(startup !== '0');
+			const locked = localStorage.getItem('hexcall-overlay-locked');
+			if (locked !== null) setOverlayLocked(locked === '1');
 		} catch {}
 	}, []);
 
@@ -86,6 +89,14 @@ export default function Settings() {
 	useEffect(() => {
 		refreshDevices();
 	}, []);
+
+	// Apply overlay settings to Electron overlay
+	useEffect(() => {
+		window.hexcall?.setOverlayCorner?.(corner);
+		window.hexcall?.setOverlayScale?.(scale);
+		window.hexcall?.setOverlayInteractive?.(!overlayLocked);
+		try { localStorage.setItem('hexcall-overlay-locked', overlayLocked ? '1' : '0'); } catch {}
+	}, [corner, scale, overlayLocked]);
 
 	function stopMicMonitor() {
 		if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
@@ -760,6 +771,17 @@ export default function Settings() {
 									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
 								</label>
 					</div>
+
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">Lock Overlay</label>
+									<p className="text-xs text-neutral-400 mt-1">Prevents dragging; clicks pass through</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={overlayLocked} onChange={e => setOverlayLocked(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+								</label>
+							</div>
 
 							<div>
 								<label className="text-sm font-medium text-neutral-300 mb-2 block">Position</label>

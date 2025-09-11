@@ -2,6 +2,30 @@
 
 All notable changes to Hexcall will be documented in this file.
 
+## [1.4.0] - 2025-09-11
+
+### Installer
+- Switched to one‑click NSIS with silent in‑app restart after updates
+- Added bespoke NSIS include (branding text, welcome/finish copy)
+- Added EULA displayed in installer (`build/LICENSE.txt`)
+
+### Overlay
+- Keeps on top of League more reliably; prevents focus stealing
+- New Lock Overlay setting (click‑through when locked)
+- Simplified overlay UI to icons only; minimized text
+
+### Call Reliability
+- Auto‑reconnect on drops with exponential backoff
+- In‑app notifications on connection lost/reconnect
+- More reliable “Join League Call” transition from manual calls
+
+### Champion/Summoner Icons
+- Uses champion icon in Champ Select and In‑Game
+- Faster presence updates to surface icons sooner
+
+### Sound Cues
+- Lightweight built‑in connection and UX sounds (no external assets)
+
 ## [1.1.0] - 2024-12-19
 
 ### 🎉 Major UX/UI Overhaul
