@@ -417,10 +417,30 @@ export default function Home() {
 		}
 		
 		// Apply/restore volume to all peers immediately
-		if (connectedPeers) {
+		if (connectedPeers && setUserVolume && getUserVolume) {
 			connectedPeers.forEach(peer => {
 				if (!peer.isSelf) {
-					setUserVolume?.(peer.id, newDeafened ? 0 : masterVolume);
+					if (newDeafened) {
+						// Deafening: set to 0
+						setUserVolume(peer.id, 0);
+					} else {
+						// Undeafening: restore to saved volume or default
+						// VoiceClient loads volumes from localStorage automatically
+						// We just need to trigger a re-application of the stored volume
+						const storedVolume = (() => {
+							try {
+								const saved = localStorage.getItem('hexcall-user-volumes');
+								if (saved) {
+									const volumes = JSON.parse(saved);
+									return volumes[peer.id];
+								}
+							} catch {}
+							return undefined;
+						})();
+						
+						// Restore custom volume or use master volume as fallback
+						setUserVolume(peer.id, storedVolume ?? masterVolume);
+					}
 				}
 			});
 		}
@@ -428,14 +448,9 @@ export default function Home() {
 
 	const handleMasterVolumeChange = (volume: number) => {
 		setMasterVolume(volume);
-		// Apply to all connected peers
-		if (connectedPeers) {
-			connectedPeers.forEach(peer => {
-				if (!peer.isSelf) {
-					setUserVolume?.(peer.id, volume);
-				}
-			});
-		}
+		// Master volume is used as the default for NEW peers only
+		// It does NOT override custom per-user volumes
+		// If you want to change all volumes, use the individual volume controls
 	};
 
 	const handleMicrophoneGainChange = (gain: number) => {
@@ -444,14 +459,42 @@ export default function Home() {
 		// For now, we'll just store the value
 	};
 
-	// Apply deafen state to all peers when deafened or when peers change
+	// Track which peers we've initialized volumes for
+	const initializedPeerVolumesRef = useRef<Set<string>>(new Set());
+	
+	// Apply initial volume to newly connected peers only
+	// This effect does NOT override existing custom volumes
 	useEffect(() => {
 		if (!connectedPeers || !setUserVolume) return;
 		
 		connectedPeers.forEach(peer => {
-			if (!peer.isSelf) {
-				const targetVolume = deafened ? 0 : masterVolume;
-				setUserVolume(peer.id, targetVolume);
+			if (!peer.isSelf && !initializedPeerVolumesRef.current.has(peer.id)) {
+				// Check if this peer has a custom volume stored
+				let hasCustomVolume = false;
+				try {
+					const saved = localStorage.getItem('hexcall-user-volumes');
+					if (saved) {
+						const volumes = JSON.parse(saved);
+						hasCustomVolume = peer.id in volumes;
+					}
+				} catch {}
+				
+				// Only set initial volume if no custom volume exists
+				if (!hasCustomVolume) {
+					const initialVolume = deafened ? 0 : masterVolume;
+					setUserVolume(peer.id, initialVolume);
+				}
+				
+				// Mark this peer as initialized
+				initializedPeerVolumesRef.current.add(peer.id);
+			}
+		});
+		
+		// Clean up tracking for peers who left
+		const currentPeerIds = new Set(connectedPeers.map(p => p.id));
+		initializedPeerVolumesRef.current.forEach(peerId => {
+			if (!currentPeerIds.has(peerId)) {
+				initializedPeerVolumesRef.current.delete(peerId);
 			}
 		});
 	}, [connectedPeers, deafened, masterVolume, setUserVolume]);

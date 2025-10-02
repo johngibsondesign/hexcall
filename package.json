@@ -1,6 +1,6 @@
 {
     "name":  "hexcall",
-    "version":  "1.5.0",
+    "version":  "1.5.1",
     "description":  "Hexcall - lightweight voice overlay for League of Legends",
     "main":  "dist/electron/main.js",
     "scripts":  {

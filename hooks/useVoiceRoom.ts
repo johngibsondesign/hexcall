@@ -84,9 +84,12 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 				}
 			}
 			
-			const ids = filteredPeers.map(p => p.id);
-			console.log('[useVoiceRoom] Setting peerIds to:', ids);
-			setPeerIds(ids);
+			// DON'T update peerIds here - let onPeersChanged handle peer list changes
+			// This callback should only update presence metadata and speaking status
+			// const ids = filteredPeers.map(p => p.id);
+			// console.log('[useVoiceRoom] Setting peerIds to:', ids);
+			// setPeerIds(ids);
+			
 			// Allow joining even if alone; mesh forms when others join
 			setCanJoin(true);
 			
@@ -99,13 +102,12 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			});
 			setSpeakingUsers(newSpeakingUsers);
 			
-			try { localStorage.setItem('hexcall-presence', JSON.stringify(ids)); } catch {}
+			// Store presence metadata for UI display (names, icons, etc)
 			try { 
 				console.log('[useVoiceRoom] Storing presence metas in localStorage:', JSON.stringify(filteredPeers, null, 2));
 				// Only store cleaned, filtered peers to prevent bloat
 				localStorage.setItem('hexcall-presence-metas', JSON.stringify(filteredPeers)); 
 			} catch {}
-			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids } as any)); } catch {}
 		};
 		
 		// Initialize the client (this will set up signaling and presence)

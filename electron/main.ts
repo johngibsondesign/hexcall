@@ -106,26 +106,18 @@ function createOverlayWindow() {
 		overlayWindow.loadFile(overlayPath);
 	}
 	
-	// Use highest window level for overlay over fullscreen games
-	// Try multiple approaches to ensure visibility over fullscreen games
-	overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+	// Use floating window level for overlay - works with borderless and minimizes fullscreen issues
+	// 'floating' level stays on top but doesn't interfere with fullscreen apps like 'screen-saver' does
+	overlayWindow.setAlwaysOnTop(true, 'floating');
 	overlayWindow.setVisibleOnAllWorkspaces(true);
 	
-	// Windows-specific: Ensure overlay stays on top of fullscreen apps
+	// Windows-specific: Ensure overlay doesn't interfere with fullscreen apps
 	if (process.platform === 'win32') {
 		try {
-			// Force the window to stay on top even over fullscreen DirectX/OpenGL windows
+			// Keep overlay in taskbar hidden and non-focusable to avoid stealing focus
 			overlayWindow.setSkipTaskbar(true);
 			overlayWindow.setFocusable(false);
-			
-			// Get the native window handle and apply TOPMOST extended style
-			// This is more aggressive than Electron's built-in alwaysOnTop
-			const hwnd = overlayWindow.getNativeWindowHandle();
-			if (hwnd) {
-				// Use Windows API to set TOPMOST flag
-				// This requires the 'ffi-napi' and 'ref-napi' packages, but we can try without for now
-				console.log('[OVERLAY] Window handle:', hwnd);
-			}
+			console.log('[OVERLAY] Set Windows-specific flags');
 		} catch (e) {
 			console.error('[OVERLAY] Failed to set Windows-specific flags:', e);
 		}
@@ -133,18 +125,17 @@ function createOverlayWindow() {
 	
 	const { width, height } = overlayWindow.getBounds();
 	positionOverlay(width, height);
-
-	// Periodically re-apply always-on-top to combat fullscreen games
-	// Some games reset window Z-order, so we need to re-assert it more frequently
-	// Also try alternating between screen-saver and pop-up-menu levels
-	let useScreenSaver = true;
+	
+	// Make sure overlay is visible
+	overlayWindow.show();
+	
+	// Periodically re-apply always-on-top less aggressively
+	// Only use floating level to avoid interfering with fullscreen apps
 	setInterval(() => {
 		if (overlayWindow && !overlayWindow.isDestroyed()) {
-			const level = useScreenSaver ? 'screen-saver' : 'pop-up-menu';
-			overlayWindow.setAlwaysOnTop(true, level, 1);
-			useScreenSaver = !useScreenSaver; // Alternate each cycle
+			overlayWindow.setAlwaysOnTop(true, 'floating');
 		}
-	}, 1000); // Re-assert every second (more aggressive)
+	}, 5000); // Re-assert every 5 seconds (less aggressive)
 
 	// Add debug logging for overlay loading issues
 	overlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
