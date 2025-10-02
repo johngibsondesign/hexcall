@@ -237,10 +237,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       // Only auto-set room when we actually have a party (>=2) and phase allows it
       if (newRoom && allowedPhases.includes(phase) && members.length >= 2) {
-        if (newRoom !== roomId) {
+        // Don't change room if we're already connected and in a call
+        // This prevents disconnecting when transitioning from ChampSelect to InProgress
+        // Only change room if we're not connected yet, or if it's genuinely a different party
+        if (newRoom !== roomId && !connected) {
           console.log('[VoiceProvider] Auto-joining League room:', newRoom);
           setRoomId(newRoom);
           setIsManualCall(false);
+        } else if (connected && newRoom !== roomId) {
+          // Already connected but room ID changed (phase transition) - stay in current call
+          console.log('[VoiceProvider] Room ID changed but staying connected (phase transition):', roomId, '->', newRoom);
         }
       } else if (phase === 'EndOfGame' || phase === 'NotFound' || !allowedPhases.includes(phase) || members.length < 2) {
         // Only leave auto rooms, not manual ones
