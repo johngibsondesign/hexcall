@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useVoiceRoom } from '../hooks/useVoiceRoom';
 import { cacheSummonerData, getCachedSummonerData, getCachedDisplayName, getCachedFullDisplayName, getCachedIconUrl, updateGameState } from '../lib/summonerCache';
+import { playSound } from '../lib/sounds';
 
 type VoiceContextValue = {
   muted: boolean;
@@ -162,8 +163,29 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       // Update game state in cache (for icon switching)
       updateGameState(phase, playerChampionName, playerChampionId);
+      
+      // Force presence update when entering champion-relevant phases to show champion icons
+      if (['ChampSelect', 'InProgress'].includes(phase)) {
+        // Small delay to ensure cache is updated before presence refresh
+        setTimeout(() => {
+          if (updatePresence) {
+            const { name, riotId } = getCachedFullDisplayName();
+            const iconUrl = getCachedIconUrl(phase);
+            const meta: any = { 
+              userId, 
+              displayName: name || 'User',
+              riotId: riotId || '',
+              iconUrl: iconUrl || '',
+              connected: true,
+              ts: Date.now()
+            };
+            console.log('[VoiceProvider] Force updating presence with champion icon for phase:', phase, meta);
+            updatePresence(meta);
+          }
+        }, 500);
+      }
 
-      // Don't interfere with manual calls
+      // Don't interfere with manual calls - but process state if we're not in one yet
       if (isManualCall) return;
 
       const members: any[] = Array.isArray(payload?.members) ? payload.members : [];
@@ -195,11 +217,21 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       offUpdate && offUpdate();
       offHotkey && offHotkey();
     };
-  }, [isManualCall, leave]);
+  }, [isManualCall, leave, roomId, userId, updatePresence]);
 
   useEffect(() => {
     mute(muted);
+    if (muted) {
+      try { playSound('mute'); } catch {}
+    }
   }, [muted, mute]);
+
+  // Warn if speaking while muted
+  useEffect(() => {
+    if (muted && isSelfSpeaking) {
+      try { playSound('muted_speaking'); } catch {}
+    }
+  }, [muted, isSelfSpeaking]);
 
   useEffect(() => {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
@@ -207,18 +239,33 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       console.log('[VoiceProvider] Auto-joining room:', roomId, 'isManualCall:', isManualCall);
       // Auto-join for League rooms or manual calls
       // For League rooms, always force join even if alone initially
+      try { playSound('connect'); } catch {}
       join(true);
     }
   }, [roomId, connected, join, isManualCall]);
+
+  // Sound on successful connection
+  useEffect(() => {
+    if (connected) {
+      try { playSound('joined'); } catch {}
+    }
+  }, [connected]);
 
   // Manual call functions
   const createManualCall = async (): Promise<string> => {
     if (!userIdReady) {
       console.log('[VoiceProvider] Waiting for user ID to be ready before creating call...');
-      // Wait for user ID to be ready
-      while (!userIdReady) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      // Wait for user ID to be ready with proper Promise handling
+      await new Promise<void>((resolve) => {
+        const checkReady = () => {
+          if (userIdReady) {
+            resolve();
+          } else {
+            setTimeout(checkReady, 100);
+          }
+        };
+        checkReady();
+      });
     }
     
     const callRoom = `manual-${userCode}`;
@@ -240,10 +287,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const joinByCode = async (code: string): Promise<void> => {
     if (!userIdReady) {
       console.log('[VoiceProvider] Waiting for user ID to be ready before joining...');
-      // Wait for user ID to be ready
-      while (!userIdReady) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      // Wait for user ID to be ready with proper Promise handling
+      await new Promise<void>((resolve) => {
+        const checkReady = () => {
+          if (userIdReady) {
+            resolve();
+          } else {
+            setTimeout(checkReady, 100);
+          }
+        };
+        checkReady();
+      });
     }
     
     if (!code || code.length !== 6) {
@@ -484,5 +538,4 @@ if (typeof window !== 'undefined') {
     ctx.__hexcall_leave = () => {};
   } catch {}
 }
-
 

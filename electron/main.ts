@@ -93,10 +93,33 @@ function createOverlayWindow() {
 		console.log('[OVERLAY] Loading overlay window from:', overlayPath);
 		overlayWindow.loadFile(overlayPath);
 	}
-	overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+	
+	// Use highest window level for overlay over fullscreen games
+	// 'pop-up-menu' is higher than 'screen-saver' and works better with games
+	overlayWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
 	overlayWindow.setVisibleOnAllWorkspaces(true);
+	
+	// Windows-specific: Ensure overlay stays on top of fullscreen apps
+	if (process.platform === 'win32') {
+		try {
+			// Force the window to stay on top even over fullscreen DirectX/OpenGL windows
+			overlayWindow.setSkipTaskbar(true);
+			overlayWindow.setFocusable(false);
+		} catch (e) {
+			console.error('[OVERLAY] Failed to set Windows-specific flags:', e);
+		}
+	}
+	
 	const { width, height } = overlayWindow.getBounds();
 	positionOverlay(width, height);
+
+	// Periodically re-apply always-on-top to combat fullscreen games
+	// Some games reset window Z-order, so we need to re-assert it
+	setInterval(() => {
+		if (overlayWindow && !overlayWindow.isDestroyed()) {
+			overlayWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+		}
+	}, 2000); // Re-assert every 2 seconds
 
 	// Add debug logging for overlay loading issues
 	overlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -134,7 +157,7 @@ app.whenReady().then(() => {
 	createOverlayWindow();
 
     // auto-updater
-    autoUpdater.autoDownload = true;
+    autoUpdater.autoDownload = false; // Let user trigger download via UI
     autoUpdater.autoInstallOnAppQuit = true;
 	
 	autoUpdater.on('update-available', (info) => {
