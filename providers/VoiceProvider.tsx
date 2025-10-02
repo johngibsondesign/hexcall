@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useVoiceRoom } from '../hooks/useVoiceRoom';
 import { cacheSummonerData, getCachedSummonerData, getCachedDisplayName, getCachedFullDisplayName, getCachedIconUrl, updateGameState } from '../lib/summonerCache';
 import { playSound } from '../lib/sounds';
+import { startCall, endCall, updateCallParticipants } from '../lib/callHistory';
 
 type VoiceContextValue = {
   muted: boolean;
@@ -82,16 +83,26 @@ function getUserCode(): string {
 function deriveRoomId(update: any): string | undefined {
   const lobby = update?.lobby;
   const members: any[] = update?.members || [];
+  
+  // Priority 1: Use partyId if available (most stable)
   if (lobby?.partyId) return String(lobby.partyId);
+  
+  // Priority 2: Use lobbyId if available
   if (lobby?.lobbyId) return String(lobby.lobbyId);
-  if (members.length) {
-    return members
-      .map((m: any) => m.puuid || m.summonerId || m.accountId || m.gameName || m.summonerName)
+  
+  // Priority 3: Generate from sorted member identifiers (stable across phases)
+  // Use PUUID preferentially as it's most stable
+  if (members.length >= 2) {
+    const identifiers = members
+      .map((m: any) => m.puuid || m.summonerId || m.accountId)
       .filter(Boolean)
-      .sort()
+      .sort() // Sort to ensure consistent order
       .join('-')
       .slice(0, 64);
+    
+    if (identifiers) return identifiers;
   }
+  
   return undefined;
 }
 
@@ -138,6 +149,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       let playerChampionName: string | undefined;
       let playerChampionId: number | undefined;
       
+      // During champ select, champion data is in playerChampionSelections
       if (payload?.session?.gameData?.playerChampionSelections && payload?.self?.puuid) {
         const playerSelection = payload.session.gameData.playerChampionSelections.find(
           (p: any) => p.puuid === payload.self.puuid
@@ -145,6 +157,35 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         if (playerSelection) {
           playerChampionName = playerSelection.championName;
           playerChampionId = playerSelection.championId;
+        }
+      }
+      
+      // During in-game, try to get champion from different paths in the session data
+      // The session object structure changes between champ select and in-game
+      if (!playerChampionName && phase === 'InProgress') {
+        // Try gameData.teamOne and teamTwo arrays
+        if (payload?.session?.gameData?.teamOne && payload?.self?.puuid) {
+          const player = payload.session.gameData.teamOne.find((p: any) => p.puuid === payload.self.puuid);
+          if (player) {
+            playerChampionName = player.championName;
+            playerChampionId = player.championId;
+          }
+        }
+        if (!playerChampionName && payload?.session?.gameData?.teamTwo && payload?.self?.puuid) {
+          const player = payload.session.gameData.teamTwo.find((p: any) => p.puuid === payload.self.puuid);
+          if (player) {
+            playerChampionName = player.championName;
+            playerChampionId = player.championId;
+          }
+        }
+        
+        // Try myTeam array as fallback
+        if (!playerChampionName && payload?.session?.myTeam && payload?.self?.summonerId) {
+          const player = payload.session.myTeam.find((p: any) => p.summonerId === payload.self.summonerId);
+          if (player) {
+            playerChampionName = player.championName;
+            playerChampionId = player.championId;
+          }
         }
       }
 
@@ -164,7 +205,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // Update game state in cache (for icon switching)
       updateGameState(phase, playerChampionName, playerChampionId);
       
-      // Force presence update when entering champion-relevant phases to show champion icons
+      // Force presence update during ChampSelect and InProgress to show champion icons
+      // This ensures real-time updates as players change champions
       if (['ChampSelect', 'InProgress'].includes(phase)) {
         // Small delay to ensure cache is updated before presence refresh
         setTimeout(() => {
@@ -204,6 +246,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         // Only leave auto rooms, not manual ones
         if (roomId && !isManualCall) {
           console.log('[VoiceProvider] Leaving auto room due to phase/member change');
+          // End call tracking before leaving
+          endCall(roomId);
           leave();
           setMuted(false);
           setRoomId(undefined);
@@ -237,19 +281,54 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const auto = typeof window !== 'undefined' ? localStorage.getItem('hexcall-auto-join') !== '0' : true;
     if (auto && roomId && !connected) {
       console.log('[VoiceProvider] Auto-joining room:', roomId, 'isManualCall:', isManualCall);
-      // Auto-join for League rooms or manual calls
-      // For League rooms, always force join even if alone initially
-      try { playSound('connect'); } catch {}
-      join(true);
+      
+      // Delay join slightly to ensure presence data is available
+      // This prevents joining with incomplete summoner/champion data
+      const joinDelay = isManualCall ? 100 : 300;
+      
+      setTimeout(() => {
+        // Update presence one more time right before joining to ensure fresh data
+        if (updatePresence) {
+          const { name, riotId } = getCachedFullDisplayName();
+          const iconUrl = getCachedIconUrl(currentGamePhase);
+          const meta: any = { 
+            userId, 
+            displayName: name || 'User',
+            riotId: riotId || '',
+            iconUrl: iconUrl || '',
+            connected: true,
+            ts: Date.now()
+          };
+          console.log('[VoiceProvider] Pre-join presence update:', meta);
+          updatePresence(meta);
+        }
+        
+        // Auto-join for League rooms or manual calls
+        // For League rooms, always force join even if alone initially
+        try { playSound('connect'); } catch {}
+        join(true);
+      }, joinDelay);
     }
-  }, [roomId, connected, join, isManualCall]);
+  }, [roomId, connected, join, isManualCall, userId, updatePresence, currentGamePhase]);
 
-  // Sound on successful connection
+  // Sound on successful connection + start tracking call history
   useEffect(() => {
-    if (connected) {
+    if (connected && roomId) {
       try { playSound('joined'); } catch {}
+      
+      // Start tracking call in history
+      const callType = isManualCall ? 'manual' : 'league';
+      const callCode = isManualCall ? userCode : undefined;
+      startCall(roomId, callType, callCode);
     }
-  }, [connected]);
+  }, [connected, roomId, isManualCall, userCode]);
+
+  // Update call history participants when they change
+  useEffect(() => {
+    if (connected && roomId && peerIds.length > 0) {
+      updateCallParticipants(roomId, peerIds);
+    }
+  }, [connected, roomId, peerIds]);
 
   // Manual call functions
   const createManualCall = async (): Promise<string> => {
@@ -318,6 +397,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const manualLeave = async (): Promise<void> => {
+    // End call tracking before leaving
+    if (roomId) {
+      endCall(roomId);
+    }
+    
     await leave();
     setIsManualCall(false);
     setRoomId(undefined);
@@ -498,6 +582,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, [join, leave, isManualCall, manualLeave, roomId, userCode, connected, muted]);
 
   // Set up push-to-talk hotkey listener
+  // Listen for PTT hotkey
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -507,6 +592,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     return () => off?.();
   }, [setPushToTalkActive]);
+
+  // Listen for PTM hotkey (Push-to-Mute)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const off = window.hexcall?.onHotkeyPushToMute?.((active: boolean) => {
+      // PTM is the inverse: mute when key is held, unmute when released
+      setMuted(active);
+    });
+
+    return () => off?.();
+  }, []);
 
   // Show/hide overlay based on voice call connection or game state
   useEffect(() => {

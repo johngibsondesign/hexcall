@@ -1,6 +1,7 @@
 import type { AppProps } from 'next/app';
 import '../styles/globals.css';
 import { VoiceProvider } from '../providers/VoiceProvider';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useEffect } from 'react';
 import { ToastContainer, useToast } from '../components/Toast';
 
@@ -94,9 +95,11 @@ function AppContent({ Component, pageProps, router }: AppContentProps) {
 
 export default function App({ Component, pageProps, router }: AppContentProps) {
 	return (
-		<VoiceProvider>
-			<AppContent Component={Component} pageProps={pageProps} router={router} />
-		</VoiceProvider>
+		<ErrorBoundary>
+			<VoiceProvider>
+				<AppContent Component={Component} pageProps={pageProps} router={router} />
+			</VoiceProvider>
+		</ErrorBoundary>
 	);
 }
 

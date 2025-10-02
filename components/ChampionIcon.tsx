@@ -76,6 +76,7 @@ export function ChampionIcon({
       <img 
         src={iconUrl} 
         alt={alt} 
+        loading="lazy"
         className={className}
         onError={() => setHasError(true)}
       />
@@ -115,6 +116,7 @@ export function ChampionIconWithPreview({
         <img
           src={previewUrl}
           alt={`${props.alt} splash art`}
+          loading="lazy"
           className={`${previewClassName} opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none`}
           onError={() => setPreviewUrl(null)}
         />

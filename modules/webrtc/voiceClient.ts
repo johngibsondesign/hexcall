@@ -442,14 +442,37 @@ export class VoiceClient {
 				this.reconnectAttempts = 0;
 				this.reconnectDelay = 1000;
 				this.startStatsMonitoring();
-			} else if (state === 'failed' || state === 'disconnected') {
+			} else if (state === 'failed') {
+				console.warn(`[VoiceClient] Connection failed with ${peerId}, attempting recovery...`);
+				
+				// Attempt ICE restart first before full reconnection
+				if (this.reconnectAttempts < 2 && pc.restartIce) {
+					try {
+						pc.restartIce();
+						console.log(`[VoiceClient] Initiated ICE restart for ${peerId}`);
+						return; // Wait for ICE restart to complete
+					} catch (error) {
+						console.error(`[VoiceClient] ICE restart failed for ${peerId}:`, error);
+					}
+				}
+				
 				// Clean up failed connection
 				this.peerConnections.delete(peerId);
 				this.remoteAudioEls.get(peerId)?.remove();
 				this.remoteAudioEls.delete(peerId);
 				this.remoteAnalysers.delete(peerId);
+				
+				// Attempt reconnection with exponential backoff
+				this.scheduleReconnection();
+			} else if (state === 'disconnected') {
+				// Clean up disconnected connection
+				this.peerConnections.delete(peerId);
+				this.remoteAudioEls.get(peerId)?.remove();
+				this.remoteAudioEls.delete(peerId);
+				this.remoteAnalysers.delete(peerId);
+				
 				const currentPeers = Array.from(this.peerConnections.keys());
-				console.log('[VoiceClient] Peer connection failed/disconnected, current peers:', currentPeers);
+				console.log('[VoiceClient] Peer disconnected, current peers:', currentPeers);
 				this.onPeersChanged?.(currentPeers);
 				
 				// If no peers left, update connection state
@@ -640,6 +663,42 @@ export class VoiceClient {
 			};
 			tick();
 		} catch {}
+	}
+
+	/**
+	 * Schedule reconnection with exponential backoff
+	 */
+	private scheduleReconnection() {
+		if (this.isDestroyed || this.reconnectAttempts >= this.maxReconnectAttempts) {
+			if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+				console.error('[VoiceClient] Max reconnection attempts reached, giving up');
+				this.updateConnectionState('failed');
+			}
+			return;
+		}
+		
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+		}
+		
+		this.reconnectAttempts++;
+		const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+		
+		console.log(`[VoiceClient] Scheduling reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+		this.updateConnectionState('connecting');
+		
+		this.reconnectTimer = setTimeout(async () => {
+			if (this.isDestroyed) return;
+			
+			try {
+				console.log('[VoiceClient] Attempting reconnection...');
+				// Re-initialize signaling and rejoin
+				await this.init();
+			} catch (error) {
+				console.error('[VoiceClient] Reconnection failed:', error);
+				this.scheduleReconnection(); // Try again
+			}
+		}, delay);
 	}
 
 	private setupRemoteAudioAnalysis(userId: string, stream: MediaStream) {

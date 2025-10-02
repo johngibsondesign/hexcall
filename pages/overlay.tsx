@@ -7,6 +7,8 @@ import { FaPhone, FaPhoneSlash, FaExclamation, FaGear, FaEye, FaEyeSlash, FaPale
 import { FaVolumeXmark as FaVolumeMute } from 'react-icons/fa6';
 import { useVoice } from '../providers/VoiceProvider';
 import { getOverlayTheme, loadOverlayTheme, saveOverlayTheme, overlayThemes } from '../lib/overlayThemes';
+import { OverlayToastContainer, type OverlayToastData } from '../components/OverlayToast';
+import { getConnectionQuality, getQualityRingClass, type ConnectionMetrics } from '../lib/connectionQuality';
 
 const dragStyle = { WebkitAppRegion: 'drag' } as any;
 const noDragStyle = { WebkitAppRegion: 'no-drag' } as any;
@@ -39,9 +41,13 @@ export default function Overlay() {
 	const [overlayVisible, setOverlayVisible] = useState(true);
 	const [currentTheme, setCurrentTheme] = useState('default');
 	const [gamePhase, setGamePhase] = useState<string>('Unknown');
+	const [toasts, setToasts] = useState<OverlayToastData[]>([]);
+	const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+	const previousPeersRef = useRef<Set<string>>(new Set());
+	const peerNamesRef = useRef<Map<string, string>>(new Map());
 	const containerRef = useRef<HTMLDivElement>(null);
     const champKeyToNameRef = useRef<Record<string, string>>({});
-    const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers } = useVoice();
+    const { speakingUsers, isSelfSpeaking, setUserVolume, getUserVolume, connected, connectedPeers, connectionStats } = useVoice();
     
 	// Show overlay when connected to a call OR when game is in progress
 	const shouldShowOverlay = connected || gamePhase === 'InProgress';
@@ -52,6 +58,12 @@ export default function Overlay() {
     // Load saved theme on mount
     useEffect(() => {
         setCurrentTheme(loadOverlayTheme());
+        
+        // Load notification preference
+        try {
+            const saved = localStorage.getItem('hexcall-in-game-notifications');
+            setNotificationsEnabled(saved !== '0');
+        } catch {}
     }, []);
 
     // Connected peers filtering
@@ -67,6 +79,79 @@ export default function Overlay() {
         } catch {}
         return () => { window.removeEventListener('hexcall:presence', handler as any); };
     }, []);
+
+    // Track peer changes and show join/leave notifications
+    useEffect(() => {
+        if (!connected || !notificationsEnabled) {
+            // Clear tracking when disconnected or notifications disabled
+            previousPeersRef.current.clear();
+            return;
+        }
+
+        const currentPeers = new Set(connectedIds);
+        const previousPeers = previousPeersRef.current;
+
+        // Skip first time to avoid showing toasts on initial connection
+        if (previousPeers.size === 0 && currentPeers.size > 0) {
+            previousPeersRef.current = currentPeers;
+            return;
+        }
+
+        // Detect joins
+        currentPeers.forEach((peerId) => {
+            if (!previousPeers.has(peerId)) {
+                // New peer joined
+                const peerName = peerNamesRef.current.get(peerId) || 'User';
+                const toast: OverlayToastData = {
+                    id: `${peerId}-${Date.now()}`,
+                    type: 'join',
+                    userName: peerName,
+                    timestamp: Date.now()
+                };
+                setToasts((prev) => [...prev, toast]);
+            }
+        });
+
+        // Detect leaves
+        previousPeers.forEach((peerId) => {
+            if (!currentPeers.has(peerId)) {
+                // Peer left
+                const peerName = peerNamesRef.current.get(peerId) || 'User';
+                const toast: OverlayToastData = {
+                    id: `${peerId}-${Date.now()}`,
+                    type: 'leave',
+                    userName: peerName,
+                    timestamp: Date.now()
+                };
+                setToasts((prev) => [...prev, toast]);
+            }
+        });
+
+        previousPeersRef.current = currentPeers;
+    }, [connectedIds, connected, notificationsEnabled]);
+
+    // Update peer names from presence metadata
+    useEffect(() => {
+        try {
+            const metasJson = localStorage.getItem('hexcall-presence-metas');
+            if (metasJson) {
+                const metas = JSON.parse(metasJson);
+                if (Array.isArray(metas)) {
+                    metas.forEach((peer: any) => {
+                        if (peer.id && peer.meta?.displayName) {
+                            peerNamesRef.current.set(peer.id, peer.meta.displayName);
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn('[Overlay] Failed to load peer names:', error);
+        }
+    }, [connectedIds]);
+
+    const handleDismissToast = (toastId: string) => {
+        setToasts((prev) => prev.filter((t) => t.id !== toastId));
+    };
 
 	useEffect(() => {
 		const off = window.hexcall?.onLcuUpdate?.((payload: {
@@ -199,9 +284,11 @@ export default function Overlay() {
 			role: 'unknown' as const,
 			championName: undefined,
 			championId: undefined,
-			profileIconId: undefined
+			profileIconId: undefined,
+			// Use global connection stats (shows local connection quality)
+			connectionQuality: connectionStats?.connectionQuality || 'disconnected'
 		}));
-	}, [connectedPeers, isSelfSpeaking, speakingUsers]);
+	}, [connectedPeers, isSelfSpeaking, speakingUsers, connectionStats]);
 
 	const displayParticipants = teammates.length > 0 ? teammates : voiceParticipants;
 	const hasData = displayParticipants.length > 0;
@@ -374,15 +461,18 @@ export default function Overlay() {
 								<div className={`absolute -top-1 -left-1 w-2 h-2 ${roleColors[role as keyof typeof roleColors] || 'bg-neutral-400'} rounded-full border border-neutral-900 z-10`} />
 							)}
 							
-							<div className={`w-9 h-9 rounded-full bg-neutral-900/40 overflow-hidden flex items-center justify-center ring-1 transition-all cursor-pointer ${
-								tm.speaking 
+							<div className={`
+								w-9 h-9 rounded-full bg-neutral-900/40 overflow-hidden flex items-center justify-center ring-1 transition-all cursor-pointer 
+								${tm.speaking 
 									? `ring-2 ${theme.colors.speaking} ${theme.effects.shadow} animate-pulse` 
-									: `${theme.colors.border} group-hover:${theme.colors.accent}`
-							}`}>
+									: `${getQualityRingClass((tm as any).connectionQuality || 'disconnected')} group-hover:${theme.colors.accent}`
+								}
+							`}>
 								{tm.iconUrl ? (
 									<img 
 										src={tm.iconUrl} 
 										alt={tm.displayName || tm.name || 'Player'}
+										loading="lazy"
 										className="w-full h-full object-cover"
 										onError={(e) => {
 											// Fallback to ChampionIcon on error
@@ -415,6 +505,9 @@ export default function Overlay() {
 					);
 				})}
 			</div>
+			
+			{/* In-Game Notifications */}
+			<OverlayToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 			
 			{/* Context Menu */}
 			<ContextMenu

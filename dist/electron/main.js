@@ -267,6 +267,7 @@ var overlayWindow = null;
 var overlayScale = 1;
 var overlayCorner = "top-right";
 var lastLcuPayload = null;
+var overlayInteractive = true;
 function createMainWindow() {
   mainWindow = new import_electron.BrowserWindow({
     width: 1100,
@@ -311,6 +312,8 @@ function createOverlayWindow() {
     resizable: true,
     skipTaskbar: true,
     backgroundColor: "#00000000",
+    focusable: false,
+    acceptFirstMouse: true,
     webPreferences: {
       preload: import_path2.default.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -328,7 +331,7 @@ function createOverlayWindow() {
     console.log("[OVERLAY] Loading overlay window from:", overlayPath);
     overlayWindow.loadFile(overlayPath);
   }
-  overlayWindow.setAlwaysOnTop(true, "floating");
+  overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setVisibleOnAllWorkspaces(true);
   const { width, height } = overlayWindow.getBounds();
   positionOverlay(width, height);
@@ -363,7 +366,7 @@ import_electron.app.whenReady().then(() => {
   }
   createMainWindow();
   createOverlayWindow();
-  import_electron_updater.autoUpdater.autoDownload = false;
+  import_electron_updater.autoUpdater.autoDownload = true;
   import_electron_updater.autoUpdater.autoInstallOnAppQuit = true;
   import_electron_updater.autoUpdater.on("update-available", (info) => {
     console.log("[AutoUpdater] Update available:", info.version);
@@ -447,7 +450,9 @@ import_electron.app.whenReady().then(() => {
   import_electron.ipcMain.on("push-to-talk:simulate-release", () => {
     handlePushToTalkRelease();
   });
-  setInterval(async () => {
+  let lastSummonerDataCheck = false;
+  let pollInterval = 5e3;
+  const pollLCUState = async () => {
     const auth = findLCUAuth();
     if (!auth) {
       if (process.env.NODE_ENV === "development") {
@@ -492,10 +497,18 @@ import_electron.app.whenReady().then(() => {
       }
       const payload = { phase, members, lobby, session, self };
       const nextPayloadKey = JSON.stringify(payload);
-      if (nextPayloadKey !== lastLcuPayload) {
-        lastLcuPayload = nextPayloadKey;
+      const hasSummonerData = self && (self.summonerName || self.gameName) && self.profileIconId;
+      const shouldForceUpdate = !hasSummonerData && ["Lobby", "Matchmaking", "ReadyCheck", "ChampSelect", "InProgress"].includes(phase);
+      lastSummonerDataCheck = !!hasSummonerData;
+      if (nextPayloadKey !== lastLcuPayload || shouldForceUpdate) {
+        if (!shouldForceUpdate) {
+          lastLcuPayload = nextPayloadKey;
+        }
         mainWindow?.webContents.send("lcu:update", payload);
         overlayWindow?.webContents.send("lcu:update", payload);
+        if (shouldForceUpdate && process.env.NODE_ENV === "development") {
+          console.log("[LCU] Forcing update due to incomplete summoner data:", { hasSummonerData, phase });
+        }
       }
       if (overlayWindow) {
         if (phase === "InProgress") {
@@ -507,7 +520,21 @@ import_electron.app.whenReady().then(() => {
       mainWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
       overlayWindow?.webContents.send("lcu:update", { phase: "Error", members: [], lobby: null, session: null, error: String(e) });
     }
-  }, 5e3);
+    const currentHasSummonerData = lastSummonerDataCheck;
+    if (!currentHasSummonerData && pollInterval > 1e3) {
+      pollInterval = 1e3;
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LCU] Increasing poll frequency due to missing summoner data");
+      }
+    } else if (currentHasSummonerData && pollInterval < 5e3) {
+      pollInterval = 5e3;
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LCU] Returning to normal poll frequency");
+      }
+    }
+    setTimeout(pollLCUState, pollInterval);
+  };
+  pollLCUState();
 });
 import_electron.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -535,6 +562,14 @@ import_electron.ipcMain.handle("overlay:set-corner", (_e, corner) => {
   if (!overlayWindow) return;
   const { width, height } = overlayWindow.getBounds();
   positionOverlay(width, height);
+});
+import_electron.ipcMain.handle("overlay:set-interactive", (_e, interactive) => {
+  overlayInteractive = !!interactive;
+  if (!overlayWindow) return;
+  try {
+    overlayWindow.setIgnoreMouseEvents(!overlayInteractive, { forward: true });
+  } catch {
+  }
 });
 import_electron.ipcMain.handle("window:minimize", () => {
   mainWindow?.minimize();
@@ -572,7 +607,7 @@ import_electron.ipcMain.handle("updates:quitAndInstall", async () => {
   try {
     console.log("[AutoUpdater] Quit and install requested");
     setTimeout(() => {
-      import_electron_updater.autoUpdater.quitAndInstall();
+      import_electron_updater.autoUpdater.quitAndInstall(true, true);
     }, 1e3);
     return { success: true };
   } catch (err) {

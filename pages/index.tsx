@@ -17,7 +17,9 @@ import {
 	FaVolumeLow,
 	FaVolumeXmark,
 	FaBan,
-	FaUserXmark
+	FaUserXmark,
+	FaClock,
+	FaRotateRight
 } from 'react-icons/fa6';
 import { RoleIcon } from '../components/RoleIcon';
 import { ChampionIconWithPreview } from '../components/ChampionIcon';
@@ -31,6 +33,8 @@ import { VoiceControlPanel } from '../components/VoiceControlPanel';
 import { SetupStatusCard } from '../components/SetupStatusCard';
 import { QuickStartGuide } from '../components/QuickStartGuide';
 import { HoverVolumeControl } from '../components/HoverVolumeControl';
+import { getCallHistory, formatDuration, formatTimestamp, type CallHistoryEntry } from '../lib/callHistory';
+import { getConnectionQuality, getQualityRingClass, getQualityLabel, getQualityDescription, type ConnectionMetrics } from '../lib/connectionQuality';
 
 interface Teammate {
 	summonerName?: string;
@@ -79,7 +83,6 @@ export default function Home() {
 	const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
 	const [showQuickStart, setShowQuickStart] = useState(false);
 	const [participantJoinTimes, setParticipantJoinTimes] = useState<Record<string, number>>({});
-	const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
 	const [availableLeagueCall, setAvailableLeagueCall] = useState<{roomId: string; memberCount: number} | null>(null);
 	const [showCallSwitchModal, setShowCallSwitchModal] = useState(false);
 	const [switchCountdown, setSwitchCountdown] = useState(10);
@@ -87,6 +90,7 @@ export default function Home() {
 	const [masterVolume, setMasterVolume] = useState(1.0);
 	const [microphoneGain, setMicrophoneGain] = useState(1.0);
 	const [autoJoinEnabled, setAutoJoinEnabled] = useState(true);
+	const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
 	const { toasts, showInfo, showSuccess, showError, removeToast } = useToast();
 	const lastVoiceStateRef = useRef<string>('');
 
@@ -112,6 +116,9 @@ export default function Home() {
 			// Load auto-join setting
 			const autoJoin = localStorage.getItem('hexcall-auto-join');
 			setAutoJoinEnabled(autoJoin !== '0'); // Default to enabled unless explicitly disabled
+			
+			// Load call history
+			setCallHistory(getCallHistory());
 			
 			// Check if user has seen onboarding
 			const seenOnboarding = localStorage.getItem('hexcall-onboarding-seen');
@@ -274,18 +281,6 @@ export default function Home() {
 		return () => clearInterval(interval);
 	}, [connected, connectedPeers?.length]);
 
-	// Close participant selection when clicking outside
-	useEffect(() => {
-		const handleClickOutside = (e: MouseEvent) => {
-			if (selectedParticipant && !(e.target as Element)?.closest('.participant-card')) {
-				setSelectedParticipant(null);
-			}
-		};
-		
-		document.addEventListener('click', handleClickOutside);
-		return () => document.removeEventListener('click', handleClickOutside);
-	}, [selectedParticipant]);
-
 	// Handle call switch modal countdown
 	useEffect(() => {
 		if (!showCallSwitchModal) return;
@@ -361,6 +356,18 @@ export default function Home() {
 		}
 	};
 
+	const handleRejoinCall = async (entry: CallHistoryEntry) => {
+		try {
+			if (entry.type === 'manual' && entry.code) {
+				await joinByCode?.(entry.code);
+			}
+			// League calls rejoin automatically when game starts
+		} catch (error) {
+			console.error('Failed to rejoin call:', error);
+			showError('Failed to rejoin', 'Call might no longer exist');
+		}
+	};
+
 	const handleOnboardingComplete = () => {
 		setShowOnboarding(false);
 		setHasSeenOnboarding(true);
@@ -401,10 +408,21 @@ export default function Home() {
 	};
 
 	const handleDeafenToggle = () => {
-		setDeafened(!deafened);
+		const newDeafened = !deafened;
+		setDeafened(newDeafened);
+		
 		// When deafening, also mute microphone
-		if (!deafened) {
+		if (newDeafened) {
 			setMuted?.(true);
+		}
+		
+		// Apply/restore volume to all peers immediately
+		if (connectedPeers) {
+			connectedPeers.forEach(peer => {
+				if (!peer.isSelf) {
+					setUserVolume?.(peer.id, newDeafened ? 0 : masterVolume);
+				}
+			});
 		}
 	};
 
@@ -426,6 +444,18 @@ export default function Home() {
 		// For now, we'll just store the value
 	};
 
+	// Apply deafen state to all peers when deafened or when peers change
+	useEffect(() => {
+		if (!connectedPeers || !setUserVolume) return;
+		
+		connectedPeers.forEach(peer => {
+			if (!peer.isSelf) {
+				const targetVolume = deafened ? 0 : masterVolume;
+				setUserVolume(peer.id, targetVolume);
+			}
+		});
+	}, [connectedPeers, deafened, masterVolume, setUserVolume]);
+
 	// Voice connection state notifications
 	useEffect(() => {
 		const handler = (e: any) => {
@@ -433,13 +463,22 @@ export default function Home() {
 			const prev = lastVoiceStateRef.current;
 			lastVoiceStateRef.current = state;
 			if (state === 'connecting') {
-				showInfo('Reconnecting…');
-				try { playSound('reconnect'); } catch {}
-			} else if (state === 'connected' && (prev === 'failed' || prev === 'disconnected' || prev === 'connecting')) {
-				showSuccess('Reconnected');
+				// Only show "Reconnecting" if we were previously connected/failed (not on initial join)
+				if (prev === 'connected' || prev === 'failed' || prev === 'disconnected') {
+					showInfo('Reconnecting…');
+					try { playSound('reconnect'); } catch {}
+				}
+			} else if (state === 'connected') {
+				// Only show "Reconnected" if this is actually a reconnection (not initial join)
+				if (prev === 'failed' || prev === 'disconnected') {
+					showSuccess('Reconnected');
+				}
+				// Don't show any toast on initial connection (prev === undefined or 'connecting')
 			} else if (state === 'failed' || state === 'disconnected') {
 				showError('Connection lost', 'Attempting to reconnect…');
 				try { playSound('reconnect_failed'); } catch {}
+				// Refresh call history when disconnecting
+				setCallHistory(getCallHistory());
 			}
 		};
 		window.addEventListener('hexcall:voice-state', handler as any);
@@ -533,50 +572,45 @@ export default function Home() {
 									const isYou = peer.isSelf;
 									const isMutedSelf = isYou && muted;
 									const joinTime = participantJoinTimes[peer.id];
-									const isSelected = selectedParticipant === peer.id;
 									
 									// Format display name
 									const displayName = peer.riotId || peer.name || peer.id.slice(0, 8);
 									
+									// Use global connection quality (shows local connection quality)
+									const connectionQuality = connectionStats?.connectionQuality || 'disconnected';
+									const qualityRingClass = getQualityRingClass(connectionQuality);
+									const qualityLabel = getQualityLabel(connectionQuality);
+									const qualityDescription = getQualityDescription(connectionStats as ConnectionMetrics);
+									
 									return (
-										<div key={peer.id} className={`participant-card group relative`}>
+										<div key={peer.id} className="participant-card group relative">
 											{/* Main Card */}
 											<div className={`
 												bg-gradient-to-br from-neutral-800/50 to-neutral-900/50 backdrop-blur-sm
 												border border-neutral-700/50 rounded-2xl p-4 h-full
-												transition-all duration-300 cursor-pointer
-												hover:border-neutral-600/50 hover:shadow-lg hover:shadow-neutral-900/20
+												transition-all duration-200
 												${isYou ? 'ring-1 ring-violet-500/30 bg-gradient-to-br from-violet-900/20 to-neutral-900/50' : ''}
-												${isSelected ? 'ring-2 ring-blue-400/50 shadow-lg shadow-blue-400/10' : ''}
 												${isSpeaking ? 'ring-2 ring-green-400/50 shadow-lg shadow-green-400/10' : ''}
 												${isMutedSelf ? 'ring-2 ring-red-400/50 shadow-lg shadow-red-400/10' : ''}
-											`}
-											onClick={() => setSelectedParticipant(isSelected ? null : peer.id)}
-											>
-												{/* Status Indicator */}
-												<div className="absolute top-3 right-3">
-													{isMutedSelf ? (
-														<div className="w-2 h-2 bg-red-400 rounded-full animate-pulse" title="Muted" />
-													) : isSpeaking ? (
-														<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" title="Speaking" />
-													) : (
-														<div className="w-2 h-2 bg-neutral-500 rounded-full" title="Connected" />
-													)}
-						</div>
-
+											`}>
 												{/* Avatar */}
-												<div className="flex justify-center mb-4">
-													<div className={`
-														relative w-20 h-20 rounded-2xl overflow-hidden
-														transition-all duration-300
-														${isMutedSelf ? 'ring-2 ring-red-400/50' : ''}
-														${isSpeaking ? 'ring-2 ring-green-400/50' : ''}
-														${!isSpeaking && !isMutedSelf ? 'ring-1 ring-neutral-600/30' : ''}
-													`}>
+												<div className="flex justify-center mb-3">
+													<div 
+														className={`
+															relative w-16 h-16 rounded-xl overflow-hidden
+															transition-all duration-200
+															ring-2
+															${isMutedSelf ? 'ring-red-400/50' : ''}
+															${isSpeaking && !isMutedSelf ? 'ring-green-400/50' : ''}
+															${!isSpeaking && !isMutedSelf ? qualityRingClass : ''}
+														`}
+														title={!isSpeaking && !isMutedSelf ? `${qualityLabel} - ${qualityDescription}` : undefined}
+													>
 														{peer.iconUrl ? (
 															<img 
 																src={peer.iconUrl} 
 																alt={displayName} 
+																loading="lazy"
 																className="w-full h-full object-cover"
 																onError={(e) => {
 																	const target = e.target as HTMLImageElement;
@@ -591,86 +625,83 @@ export default function Home() {
 															flex items-center justify-center
 															${peer.iconUrl ? 'hidden' : 'flex'}
 														`}>
-															<FaUsers className="w-8 h-8 text-neutral-300" />
+															<FaUsers className="w-6 h-6 text-neutral-300" />
 														</div>
+														
+														{/* Speaking/Status Indicator */}
+														{isMutedSelf && (
+															<div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
+																<FaMicrophoneSlash className="w-5 h-5 text-red-400" />
+															</div>
+														)}
+														{isSpeaking && !isMutedSelf && (
+															<div className="absolute bottom-1 right-1">
+																<div className="w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+															</div>
+														)}
 													</div>
 												</div>
 
 												{/* User Info */}
 												<div className="text-center space-y-2">
 													{/* Name */}
-													<div className="space-y-1">
-														<div className="font-semibold text-white text-sm truncate">
-															{displayName}
-															{isYou && <span className="text-violet-400 ml-1 font-normal">(You)</span>}
-														</div>
-														
-														{/* Connection Duration */}
-														<div className="text-xs text-neutral-400">
-															Connected: {joinTime ? formatCallDuration(joinTime) : '0s'}
-														</div>
+													<div className="font-semibold text-white text-sm truncate">
+														{displayName}
+														{isYou && <span className="text-violet-400 ml-1 font-normal text-xs">(You)</span>}
+													</div>
+													
+													{/* Connection Duration */}
+													<div className="text-xs text-neutral-500">
+														{joinTime ? formatCallDuration(joinTime) : '0s'}
 													</div>
 
-													{/* Volume Control - Show when selected and not you */}
-													{!isYou && isSelected && (
-														<div className="pt-3 border-t border-neutral-700/50">
-															<div className="space-y-3">
-																<div className="text-xs text-neutral-400 font-medium">Volume Control</div>
-																<VolumeSlider
-																	userId={peer.id}
-																	initialVolume={getUserVolume?.(peer.id) ?? 1.0}
-																	onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
-																	size="sm"
-																/>
-																
-																{/* Host Controls - Show only for manual calls when user is host */}
-																{isHost && joinedRoomId?.startsWith('manual-') && (
-																	<div className="space-y-2">
-																		<div className="text-xs text-neutral-400 font-medium">Host Controls</div>
-																		<div className="flex gap-2">
-																			<button
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					if (confirm(`Kick ${displayName} from the call?`)) {
-																						kickUser?.(peer.id);
-																					}
-																				}}
-																				className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 text-xs rounded-lg transition-colors"
-																				title={`Kick ${displayName}`}
-																			>
-																				<FaUserXmark className="w-3 h-3" />
-																				<span>Kick</span>
-																			</button>
-																			<button
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					if (confirm(`Ban ${displayName} from the call? They won't be able to rejoin.`)) {
-																						banUser?.(peer.id);
-																					}
-																				}}
-																				className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs rounded-lg transition-colors"
-																				title={`Ban ${displayName}`}
-																			>
-																				<FaBan className="w-3 h-3" />
-																				<span>Ban</span>
-																			</button>
-																		</div>
-																	</div>
-																)}
-															</div>
+													{/* Volume Control - Always visible for non-self peers */}
+													{!isYou && (
+														<div className="pt-2 space-y-2">
+															<VolumeSlider
+																userId={peer.id}
+																initialVolume={getUserVolume?.(peer.id) ?? 1.0}
+																onVolumeChange={(userId, volume) => setUserVolume?.(userId, volume)}
+																size="sm"
+															/>
+															
+															{/* Host Controls - Show only for manual calls when user is host */}
+															{isHost && joinedRoomId?.startsWith('manual-') && (
+																<div className="flex gap-1">
+																	<button
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			if (confirm(`Kick ${displayName}?`)) {
+																				kickUser?.(peer.id);
+																			}
+																		}}
+																		className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 text-xs rounded-lg transition-colors"
+																		title="Kick"
+																	>
+																		<FaUserXmark className="w-3 h-3" />
+																	</button>
+																	<button
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			if (confirm(`Ban ${displayName}? They can't rejoin.`)) {
+																				banUser?.(peer.id);
+																			}
+																		}}
+																		className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs rounded-lg transition-colors"
+																		title="Ban"
+																	>
+																		<FaBan className="w-3 h-3" />
+																	</button>
+																</div>
+															)}
 														</div>
 													)}
 												</div>
-												
-												{/* Hover Overlay */}
-												{!isYou && (
-													<div className="absolute inset-0 bg-blue-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-												)}
 											</div>
-											</div>
-										);
-									})}
-						</div>
+										</div>
+									);
+								})}
+							</div>
 
 							{/* Empty State */}
 							{(!connectedPeers || connectedPeers.length === 0) && (
@@ -714,6 +745,53 @@ export default function Home() {
 									</button>
 								</div>
 
+								{/* Call History */}
+								{callHistory.length > 0 && (
+									<div className="mt-6 pt-6 border-t border-white/10">
+										<div className="flex items-center gap-2 mb-3">
+											<FaClock className="w-3 h-3 text-neutral-400" />
+											<h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Recent Calls</h3>
+										</div>
+										<div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+											{callHistory.slice(0, 5).map((entry) => (
+												<div
+													key={entry.id + entry.startTime}
+													className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group"
+												>
+													<div className="flex-1 min-w-0">
+														<div className="flex items-center gap-2">
+															<span className="text-xs font-medium text-white truncate">
+																{entry.type === 'manual' ? `Code: ${entry.code}` : 'League Call'}
+															</span>
+															{entry.type === 'league' && (
+																<FaGamepad className="w-3 h-3 text-yellow-400 flex-shrink-0" />
+															)}
+														</div>
+														<div className="flex items-center gap-2 mt-0.5">
+															<span className="text-xs text-neutral-500">{formatTimestamp(entry.startTime)}</span>
+															{entry.duration && (
+																<>
+																	<span className="text-neutral-600">•</span>
+																	<span className="text-xs text-neutral-500">{formatDuration(entry.duration)}</span>
+																</>
+															)}
+														</div>
+													</div>
+													{entry.type === 'manual' && entry.code && !entry.endTime && (
+														<button
+															onClick={() => handleRejoinCall(entry)}
+															className="ml-2 p-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity"
+															title="Rejoin call"
+														>
+															<FaRotateRight className="w-3 h-3" />
+														</button>
+													)}
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+
 								<div className="text-xs text-neutral-500">
 									Share your code with friends to connect
 								</div>
@@ -723,7 +801,30 @@ export default function Home() {
 						{/* Right Half - League Calls */}
 						<div className="flex-1 flex items-center justify-center">
 							<div className="text-center max-w-sm mx-auto px-6 py-12">
-								{availableLeagueCall && !autoJoinEnabled ? (
+								{gamePhase === 'InProgress' && !connected && !joinedRoomId?.startsWith('manual-') ? (
+									/* In-Game but Not Connected - Show Rejoin */
+									<>
+										<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center">
+											<FaGamepad className="w-8 h-8 text-white" />
+										</div>
+										<h2 className="text-xl font-bold text-white mb-3">Game In Progress</h2>
+										<p className="text-neutral-400 text-sm mb-6">
+											You're currently in a game. Join voice chat with your team!
+										</p>
+										
+										<button
+											onClick={() => joinCall?.(true)}
+											className="w-full btn-primary px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-3 hover:scale-105 transition-transform mb-4"
+										>
+											<FaPhone className="w-4 h-4" />
+											Join Voice Chat
+										</button>
+
+										<div className="text-xs text-neutral-500">
+											Reconnect to your teammates
+										</div>
+									</>
+								) : availableLeagueCall && !autoJoinEnabled ? (
 									/* Active League Call Available */
 									<>
 										<div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">

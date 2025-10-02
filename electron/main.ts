@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, dialog, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { findLCUAuth, getGameflowPhase, getLobbyMembers, getLobby, getGameSession, getCurrentSummoner } from './lcu';
 import { autoUpdater } from 'electron-updater';
@@ -16,10 +16,13 @@ const currentProfile = profile || '';
 
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false; // Track if app is actually quitting vs minimizing to tray
 let overlayScale = 1;
 let overlayCorner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' = 'top-right';
 let lastLcuPayload: string | null = null;
 let overlayInteractive = true;
+let minimizeToTray = true; // Default to minimize to tray
 
 function createMainWindow() {
 	mainWindow = new BrowserWindow({
@@ -50,6 +53,15 @@ function createMainWindow() {
 
 	mainWindow.on('closed', () => {
 		mainWindow = null;
+	});
+
+	// Handle close event - minimize to tray instead of quit
+	mainWindow.on('close', (event) => {
+		if (!isQuitting && minimizeToTray) {
+			event.preventDefault();
+			mainWindow?.hide();
+			console.log('[MAIN] Window minimized to tray');
+		}
 	});
 
 	// Add debug logging for any loading issues
@@ -95,8 +107,8 @@ function createOverlayWindow() {
 	}
 	
 	// Use highest window level for overlay over fullscreen games
-	// 'pop-up-menu' is higher than 'screen-saver' and works better with games
-	overlayWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+	// Try multiple approaches to ensure visibility over fullscreen games
+	overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
 	overlayWindow.setVisibleOnAllWorkspaces(true);
 	
 	// Windows-specific: Ensure overlay stays on top of fullscreen apps
@@ -105,6 +117,15 @@ function createOverlayWindow() {
 			// Force the window to stay on top even over fullscreen DirectX/OpenGL windows
 			overlayWindow.setSkipTaskbar(true);
 			overlayWindow.setFocusable(false);
+			
+			// Get the native window handle and apply TOPMOST extended style
+			// This is more aggressive than Electron's built-in alwaysOnTop
+			const hwnd = overlayWindow.getNativeWindowHandle();
+			if (hwnd) {
+				// Use Windows API to set TOPMOST flag
+				// This requires the 'ffi-napi' and 'ref-napi' packages, but we can try without for now
+				console.log('[OVERLAY] Window handle:', hwnd);
+			}
 		} catch (e) {
 			console.error('[OVERLAY] Failed to set Windows-specific flags:', e);
 		}
@@ -114,12 +135,16 @@ function createOverlayWindow() {
 	positionOverlay(width, height);
 
 	// Periodically re-apply always-on-top to combat fullscreen games
-	// Some games reset window Z-order, so we need to re-assert it
+	// Some games reset window Z-order, so we need to re-assert it more frequently
+	// Also try alternating between screen-saver and pop-up-menu levels
+	let useScreenSaver = true;
 	setInterval(() => {
 		if (overlayWindow && !overlayWindow.isDestroyed()) {
-			overlayWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+			const level = useScreenSaver ? 'screen-saver' : 'pop-up-menu';
+			overlayWindow.setAlwaysOnTop(true, level, 1);
+			useScreenSaver = !useScreenSaver; // Alternate each cycle
 		}
-	}, 2000); // Re-assert every 2 seconds
+	}, 1000); // Re-assert every second (more aggressive)
 
 	// Add debug logging for overlay loading issues
 	overlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -149,12 +174,67 @@ function positionOverlay(width: number, height: number) {
 	overlayWindow?.setBounds({ x, y, width, height });
 }
 
+function createTray() {
+	// Create tray icon
+	const iconPath = path.join(__dirname, '..', 'public', 'icon.png');
+	
+	// Try to load icon, fall back to default if not found
+	let trayIcon;
+	try {
+		trayIcon = nativeImage.createFromPath(iconPath);
+		if (trayIcon.isEmpty()) {
+			// Fallback: create a simple icon
+			trayIcon = nativeImage.createEmpty();
+		}
+	} catch (error) {
+		console.warn('[Tray] Failed to load icon, using empty icon:', error);
+		trayIcon = nativeImage.createEmpty();
+	}
+	
+	tray = new Tray(trayIcon);
+	
+	const contextMenu = Menu.buildFromTemplate([
+		{
+			label: 'Show Hexcall',
+			click: () => {
+				if (mainWindow) {
+					mainWindow.show();
+					mainWindow.focus();
+				}
+			}
+		},
+		{ type: 'separator' },
+		{
+			label: 'Quit',
+			click: () => {
+				// Set flag to actually quit
+				isQuitting = true;
+				app.quit();
+			}
+		}
+	]);
+	
+	tray.setToolTip('Hexcall - League Voice Chat');
+	tray.setContextMenu(contextMenu);
+	
+	// Double-click to show window
+	tray.on('double-click', () => {
+		if (mainWindow) {
+			mainWindow.show();
+			mainWindow.focus();
+		}
+	});
+	
+	console.log('[Tray] System tray icon created');
+}
+
 app.whenReady().then(() => {
   try {
     app.setLoginItemSettings({ openAtLogin: true });
   } catch {}
 	createMainWindow();
 	createOverlayWindow();
+	createTray();
 
     // auto-updater
     autoUpdater.autoDownload = false; // Let user trigger download via UI
@@ -266,6 +346,76 @@ app.whenReady().then(() => {
 		handlePushToTalkRelease();
 	});
 
+	// Push-to-Mute functionality (inverse of PTT)
+	let pushToMuteKey = 'V';
+	let isPushToMuteEnabled = false;
+	let isPushToMuteActive = false;
+
+	// Register/unregister push-to-mute based on settings
+	const updatePushToMuteHotkey = (enabled: boolean, key: string) => {
+		// Unregister old hotkey
+		if (isPushToMuteEnabled && pushToMuteKey) {
+			try {
+				globalShortcut.unregister(pushToMuteKey);
+			} catch (e) {
+				console.warn('Failed to unregister push-to-mute key:', e);
+			}
+		}
+
+		isPushToMuteEnabled = enabled;
+		pushToMuteKey = key;
+
+		if (enabled && key) {
+			try {
+				// Register keydown event
+				const success = globalShortcut.register(key, () => {
+					if (!isPushToMuteActive) {
+						isPushToMuteActive = true;
+						BrowserWindow.getAllWindows().forEach(win => 
+							win.webContents.send('hotkey:push-to-mute', { active: true })
+						);
+					}
+				});
+
+				if (!success) {
+					console.warn(`Failed to register push-to-mute key: ${key}`);
+					BrowserWindow.getAllWindows().forEach(win => 
+						win.webContents.send('push-to-mute:error', { error: `Failed to register ${key}` })
+					);
+				}
+			} catch (e) {
+				console.warn('Error registering push-to-mute:', e);
+			}
+		}
+	};
+
+	// Handle key release
+	let pushToMuteReleaseTimer: NodeJS.Timeout | null = null;
+	
+	const handlePushToMuteRelease = () => {
+		if (isPushToMuteActive) {
+			isPushToMuteActive = false;
+			BrowserWindow.getAllWindows().forEach(win => 
+				win.webContents.send('hotkey:push-to-mute', { active: false })
+			);
+		}
+	};
+
+	// IPC handlers for push-to-mute settings
+	ipcMain.handle('push-to-mute:update-settings', (event, { enabled, key }) => {
+		updatePushToMuteHotkey(enabled, key);
+		return { success: true };
+	});
+
+	ipcMain.handle('push-to-mute:get-settings', () => {
+		return { enabled: isPushToMuteEnabled, key: pushToMuteKey };
+	});
+
+	// Simulate key release detection
+	ipcMain.on('push-to-mute:simulate-release', () => {
+		handlePushToMuteRelease();
+	});
+
 
 	// Dynamic poller for LCU state with faster polling when summoner data is missing
 	let lastSummonerDataCheck: boolean = false;
@@ -356,19 +506,30 @@ app.whenReady().then(() => {
 		setTimeout(pollLCUState, pollInterval);
 	};
 	
-	// Start polling
+	// Start polling immediately (not after timeout) to detect League on app startup
 	pollLCUState();
+	
+	// Also do an immediate second call to catch any race conditions
+	setTimeout(() => pollLCUState(), 100);
 });
 
 app.on('window-all-closed', () => {
-	if (process.platform !== 'darwin') {
+	// Don't quit on window close - we have tray icon
+	// Only quit when explicitly requested
+	if (process.platform !== 'darwin' && isQuitting) {
 		app.quit();
 	}
+});
+
+app.on('before-quit', () => {
+	isQuitting = true;
 });
 
 app.on('activate', () => {
 	if (BrowserWindow.getAllWindows().length === 0) {
 		createMainWindow();
+	} else if (mainWindow) {
+		mainWindow.show();
 	}
 });
 
@@ -401,6 +562,15 @@ ipcMain.handle('overlay:set-interactive', (_e, interactive: boolean) => {
     } catch {}
 });
 
+ipcMain.handle('overlay:set-locked', (_e, locked: boolean) => {
+	if (!overlayWindow) return;
+	try {
+		overlayWindow.setMovable(!locked);
+	} catch (e) {
+		console.error('[OVERLAY] Failed to set locked state:', e);
+	}
+});
+
 // Window controls
 ipcMain.handle('window:minimize', () => {
 	mainWindow?.minimize();
@@ -417,6 +587,17 @@ ipcMain.handle('window:is-maximized', () => {
 ipcMain.handle('window:maximize-toggle', () => {
 	if (!mainWindow) return;
 	if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
+});
+
+// Tray settings
+ipcMain.handle('app:set-minimize-to-tray', (_e, enabled: boolean) => {
+	minimizeToTray = enabled;
+	console.log('[Tray] Minimize to tray:', enabled);
+	return { success: true };
+});
+
+ipcMain.handle('app:get-minimize-to-tray', () => {
+	return minimizeToTray;
 });
 
 ipcMain.handle('updates:check', async () => {

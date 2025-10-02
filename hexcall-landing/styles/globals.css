@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+@theme {
+	--color-background: theme(colors.neutral.950);
+	--color-foreground: theme(colors.neutral.100);
+	--color-brand-start: #7c3aed; /* violet-600 */
+	--color-brand-end: #06b6d4; /* cyan-500 */
+	--color-card: rgba(10, 10, 14, 0.6);
+	--color-border: rgba(255, 255, 255, 0.08);
+	--shadow-glow: 0 0 0 1px rgba(255,255,255,0.06), 0 8px 40px rgba(124, 58, 237, 0.25), 0 4px 20px rgba(6, 182, 212, 0.15);
+}
+
+:root, html, body, #__next {
+	height: 100%;
+}
+
+body {
+	background-color: var(--color-background);
+	color: var(--color-foreground);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in oklch, var(--color-brand-end) 40%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+	background: linear-gradient(180deg, var(--color-brand-start), var(--color-brand-end));
+	border-radius: 9999px;
+	border: 2px solid rgba(0,0,0,0.3);
+}
+*::-webkit-scrollbar-track {
+	background: rgba(0,0,0,0.2);
+	border-radius: 9999px;
+}
+
+/* Hextech themed utilities */
+.bg-hextech {
+	background:
+		radial-gradient(60% 50% at 20% 10%, color-mix(in oklch, var(--color-brand-start) 30%, transparent) 0%, transparent 100%),
+		radial-gradient(50% 40% at 80% 10%, color-mix(in oklch, var(--color-brand-end) 25%, transparent) 0%, transparent 100%),
+		linear-gradient(180deg, rgba(17, 24, 39, 0.9) 0%, rgba(10, 10, 14, 1) 100%);
+}
+
+.text-gradient {
+	background: linear-gradient(90deg, var(--color-brand-start), var(--color-brand-end));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.glass {
+	background: var(--color-card);
+	backdrop-filter: blur(10px);
+	border: 1px solid var(--color-border);
+	box-shadow: var(--shadow-glow);
+}
+
+.btn-primary {
+	background: linear-gradient(90deg, color-mix(in oklch, var(--color-brand-start) 85%, black 15%), color-mix(in oklch, var(--color-brand-end) 85%, black 15%));
+	color: white;
+	border: 1px solid color-mix(in oklch, var(--color-brand-end) 30%, transparent);
+}
+.btn-primary:hover {
+	filter: brightness(1.08);
+	transform: scale(1.02);
+}
+
+.btn-secondary {
+	background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+	border: 1px solid var(--color-border);
+	color: white;
+}
+.btn-secondary:hover {
+	background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+	border: 1px solid color-mix(in oklch, var(--color-brand-end) 30%, transparent);
+}
+
+.ring-hextech {
+	box-shadow: 0 0 0 1px var(--color-border), 0 0 0 3px color-mix(in oklch, var(--color-brand-end) 25%, transparent);
+}
+
+.chip {
+	background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+	border: 1px solid var(--color-border);
+}
+
+/* Enhanced focus states for accessibility */
+.btn-primary:focus,
+.btn-secondary:focus,
+button:focus,
+input:focus,
+select:focus {
+	outline: 2px solid var(--color-brand-end);
+	outline-offset: 2px;
+}
+
+/* Improved animations and transitions */
+@keyframes fadeInUp {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes fadeInDown {
+	from {
+		opacity: 0;
+		transform: translateY(-20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes pulse-glow {
+	0%, 100% {
+		box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+	}
+	50% {
+		box-shadow: 0 0 40px rgba(124, 58, 237, 0.6);
+	}
+}
+
+.animate-fadeInUp {
+	animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-fadeInDown {
+	animation: fadeInDown 0.6s ease-out;
+}
+
+.animate-pulse-glow {
+	animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* Staggered animations */
+.animate-delay-100 { animation-delay: 0.1s; }
+.animate-delay-200 { animation-delay: 0.2s; }
+.animate-delay-300 { animation-delay: 0.3s; }
+.animate-delay-400 { animation-delay: 0.4s; }
+.animate-delay-500 { animation-delay: 0.5s; }
+
+/* Better mobile responsiveness */
+@media (max-width: 640px) {
+	.glass {
+		backdrop-filter: blur(8px);
+		background: rgba(10, 10, 14, 0.8);
+	}
+	
+	.btn-primary, .btn-secondary {
+		padding: 0.75rem 1rem;
+		font-size: 0.875rem;
+	}
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	.glass {
+		border: 2px solid var(--color-border);
+		background: rgba(0, 0, 0, 0.9);
+	}
+	
+	.text-gradient {
+		background: none;
+		color: var(--color-brand-end);
+	}
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+	.animate-pulse,
+	.animate-spin,
+	.animate-bounce,
+	.animate-fadeInUp,
+	.animate-fadeInDown,
+	.animate-pulse-glow {
+		animation: none;
+	}
+	
+	.transition-all,
+	.transition-colors,
+	.transition-transform {
+		transition: none;
+	}
+}

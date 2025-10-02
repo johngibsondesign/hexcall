@@ -53,17 +53,28 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: unique } as any)); } catch {}
 		};
 		
-		// Set up presence callback to get the signaling instance from the client
-		client.onPresenceUpdate = (peers: { id: string; meta?: any }[]) => {
-			console.log('[useVoiceRoom] Presence update for room:', roomId, 'userId:', userId, 'peers:', peers);
-			
-			// Check for banned users and filter them out for manual calls
-			let filteredPeers = peers;
+    // Set up presence callback to get the signaling instance from the client
+    client.onPresenceUpdate = (peers: { id: string; meta?: any }[]) => {
+      console.log('[useVoiceRoom] Presence update for room:', roomId, 'userId:', userId, 'peers:', peers);
+      
+      // Clean up old presence data to prevent memory leak
+      const MAX_PRESENCE_AGE = 60000; // 1 minute
+      const MAX_PRESENCE_ENTRIES = 20;
+      const now = Date.now();
+      const cleanedPeers = peers
+        .filter(p => {
+          const age = now - (p.meta?.ts || 0);
+          return age < MAX_PRESENCE_AGE || !p.meta?.ts; // Keep if recent or no timestamp
+        })
+        .slice(0, MAX_PRESENCE_ENTRIES); // Limit total entries
+      
+      // Check for banned users and filter them out for manual calls
+			let filteredPeers = cleanedPeers;
 			if (roomId.startsWith('manual-')) {
 				try {
 					const banListKey = `hexcall-banlist-${roomId}`;
 					const banList: string[] = JSON.parse(localStorage.getItem(banListKey) || '[]');
-					filteredPeers = peers.filter(peer => !banList.includes(peer.id));
+					filteredPeers = cleanedPeers.filter(peer => !banList.includes(peer.id));
 					
 					if (filteredPeers.length !== peers.length) {
 						console.log('[useVoiceRoom] Filtered banned users from presence:', banList);
@@ -91,6 +102,7 @@ export function useVoiceRoom(roomId: string, userId: string, micDeviceId?: strin
 			try { localStorage.setItem('hexcall-presence', JSON.stringify(ids)); } catch {}
 			try { 
 				console.log('[useVoiceRoom] Storing presence metas in localStorage:', JSON.stringify(filteredPeers, null, 2));
+				// Only store cleaned, filtered peers to prevent bloat
 				localStorage.setItem('hexcall-presence-metas', JSON.stringify(filteredPeers)); 
 			} catch {}
 			try { window.dispatchEvent(new CustomEvent('hexcall:presence', { detail: ids } as any)); } catch {}

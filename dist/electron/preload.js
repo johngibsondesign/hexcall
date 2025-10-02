@@ -41,6 +41,7 @@ import_electron.contextBridge.exposeInMainWorld("hexcall", {
   pushToTalkSimulateRelease: () => import_electron.ipcRenderer.send("push-to-talk:simulate-release"),
   setOverlayScale: (scale) => import_electron.ipcRenderer.invoke("overlay:set-scale", scale),
   setOverlayCorner: (corner) => import_electron.ipcRenderer.invoke("overlay:set-corner", corner),
+  setOverlayInteractive: (interactive) => import_electron.ipcRenderer.invoke("overlay:set-interactive", interactive),
   windowMinimize: () => import_electron.ipcRenderer.invoke("window:minimize"),
   windowClose: () => import_electron.ipcRenderer.invoke("window:close"),
   windowMaximizeToggle: () => import_electron.ipcRenderer.invoke("window:maximize-toggle"),

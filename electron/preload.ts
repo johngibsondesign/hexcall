@@ -19,12 +19,21 @@ contextBridge.exposeInMainWorld('hexcall', {
 		ipcRenderer.on('hotkey:push-to-talk', listener);
 		return () => ipcRenderer.removeListener('hotkey:push-to-talk', listener);
 	},
+	onHotkeyPushToMute: (cb: (active: boolean) => void) => {
+		const listener = (_e: any, data: { active: boolean }) => cb(data.active);
+		ipcRenderer.on('hotkey:push-to-mute', listener);
+		return () => ipcRenderer.removeListener('hotkey:push-to-mute', listener);
+	},
 	pushToTalkUpdateSettings: (enabled: boolean, key: string) => ipcRenderer.invoke('push-to-talk:update-settings', { enabled, key }),
 	pushToTalkGetSettings: () => ipcRenderer.invoke('push-to-talk:get-settings'),
 	pushToTalkSimulateRelease: () => ipcRenderer.send('push-to-talk:simulate-release'),
+	pushToMuteUpdateSettings: (enabled: boolean, key: string) => ipcRenderer.invoke('push-to-mute:update-settings', { enabled, key }),
+	pushToMuteGetSettings: () => ipcRenderer.invoke('push-to-mute:get-settings'),
+	pushToMuteSimulateRelease: () => ipcRenderer.send('push-to-mute:simulate-release'),
 	setOverlayScale: (scale: number) => ipcRenderer.invoke('overlay:set-scale', scale),
 	setOverlayCorner: (corner: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => ipcRenderer.invoke('overlay:set-corner', corner),
 	setOverlayInteractive: (interactive: boolean) => ipcRenderer.invoke('overlay:set-interactive', interactive),
+	setOverlayLocked: (locked: boolean) => ipcRenderer.invoke('overlay:set-locked', locked),
 	windowMinimize: () => ipcRenderer.invoke('window:minimize'),
 	windowClose: () => ipcRenderer.invoke('window:close'),
 	windowMaximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),
@@ -33,6 +42,8 @@ contextBridge.exposeInMainWorld('hexcall', {
 	updatesDownload: () => ipcRenderer.invoke('updates:download'),
 	updatesQuitAndInstall: () => ipcRenderer.invoke('updates:quitAndInstall'),
 	setAutoStart: (enabled: boolean) => ipcRenderer.invoke('app:set-auto-start', enabled),
+	setMinimizeToTray: (enabled: boolean) => ipcRenderer.invoke('app:set-minimize-to-tray', enabled),
+	getMinimizeToTray: () => ipcRenderer.invoke('app:get-minimize-to-tray'),
 	showOverlay: () => ipcRenderer.invoke('overlay:show'),
 	hideOverlay: () => ipcRenderer.invoke('overlay:hide'),
 	onUpdateAvailable: (cb: (info: any) => void) => { const l = (_: any, i: any) => cb(i); ipcRenderer.on('updates:available', l); return () => ipcRenderer.removeListener('updates:available', l); },

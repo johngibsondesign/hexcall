@@ -3,7 +3,7 @@ import { useVoiceRoom } from '../hooks/useVoiceRoom';
 import { useVoice } from '../providers/VoiceProvider';
 import { DetailedConnectionStats } from '../components/ConnectionQualityIndicator';
 import Link from 'next/link';
-import { FaArrowsRotate, FaDownload, FaCheck, FaSpinner, FaMicrophone, FaVolumeHigh, FaGamepad, FaEye, FaGear, FaBug, FaRocket, FaShield } from 'react-icons/fa6';
+import { FaArrowsRotate, FaDownload, FaCheck, FaSpinner, FaMicrophone, FaVolumeHigh, FaGamepad, FaEye, FaGear, FaBug, FaRocket, FaShield, FaLock } from 'react-icons/fa6';
 
 type MediaDeviceInfoLite = Pick<MediaDeviceInfo, 'deviceId' | 'label' | 'kind'>;
 
@@ -16,6 +16,8 @@ export default function Settings() {
 	const [selectedSpeaker, setSelectedSpeaker] = useState<string>('');
 	const [pushToTalkKey, setPushToTalkKey] = useState<string>('LeftAlt');
 	const [usePushToTalk, setUsePushToTalk] = useState<boolean>(false);
+	const [pushToMuteKey, setPushToMuteKey] = useState<string>('V');
+	const [usePushToMute, setUsePushToMute] = useState<boolean>(false);
 	const [level, setLevel] = useState(0);
 	const [corner, setCorner] = useState<Corner>('top-right');
 	const [scale, setScale] = useState<number>(1);
@@ -27,6 +29,8 @@ export default function Settings() {
 	const [autoJoin, setAutoJoin] = useState(true);
 	const [vadThreshold, setVadThreshold] = useState(0.01);
 	const [startOnSystemStart, setStartOnSystemStart] = useState(false);
+	const [minimizeToTray, setMinimizeToTray] = useState(true);
+	const [showInGameNotifications, setShowInGameNotifications] = useState(true);
 	const [showDebug, setShowDebug] = useState(false);
 	const [showOverlayPreview, setShowOverlayPreview] = useState(false);
 	
@@ -55,6 +59,10 @@ export default function Settings() {
 			if (savedPtt) setPushToTalkKey(savedPtt);
 			const savedUse = localStorage.getItem('hexcall-ptt-enabled');
 			if (savedUse) setUsePushToTalk(savedUse === '1');
+			const savedPtm = localStorage.getItem('hexcall-ptm-key');
+			if (savedPtm) setPushToMuteKey(savedPtm);
+			const savedUsePtm = localStorage.getItem('hexcall-ptm-enabled');
+			if (savedUsePtm) setUsePushToMute(savedUsePtm === '1');
 			const ec = localStorage.getItem('hexcall-audio-ec');
 			const ns = localStorage.getItem('hexcall-audio-ns');
 			const agc = localStorage.getItem('hexcall-audio-agc');
@@ -71,6 +79,10 @@ export default function Settings() {
 			if (startup !== null) setStartOnSystemStart(startup !== '0');
 			const locked = localStorage.getItem('hexcall-overlay-locked');
 			if (locked !== null) setOverlayLocked(locked === '1');
+			const tray = localStorage.getItem('hexcall-minimize-to-tray');
+			if (tray !== null) setMinimizeToTray(tray !== '0');
+			const notifications = localStorage.getItem('hexcall-in-game-notifications');
+			if (notifications !== null) setShowInGameNotifications(notifications !== '0');
 		} catch {}
 	}, []);
 
@@ -95,6 +107,7 @@ export default function Settings() {
 		window.hexcall?.setOverlayCorner?.(corner);
 		window.hexcall?.setOverlayScale?.(scale);
 		window.hexcall?.setOverlayInteractive?.(!overlayLocked);
+		window.hexcall?.setOverlayLocked?.(overlayLocked);
 		try { localStorage.setItem('hexcall-overlay-locked', overlayLocked ? '1' : '0'); } catch {}
 	}, [corner, scale, overlayLocked]);
 
@@ -175,6 +188,12 @@ export default function Settings() {
 	useEffect(() => {
 		try { localStorage.setItem('hexcall-ptt-enabled', usePushToTalk ? '1' : '0'); } catch {}
 	}, [usePushToTalk]);
+	useEffect(() => {
+		try { localStorage.setItem('hexcall-ptm-key', pushToMuteKey || ''); } catch {}
+	}, [pushToMuteKey]);
+	useEffect(() => {
+		try { localStorage.setItem('hexcall-ptm-enabled', usePushToMute ? '1' : '0'); } catch {}
+	}, [usePushToMute]);
 	useEffect(() => { try { localStorage.setItem('hexcall-auto-join', autoJoin ? '1' : '0'); } catch {} }, [autoJoin]);
 	useEffect(() => { try { localStorage.setItem('hexcall-audio-ec', echoCancellation ? '1' : '0'); } catch {} }, [echoCancellation]);
 	useEffect(() => { try { localStorage.setItem('hexcall-audio-ns', noiseSuppression ? '1' : '0'); } catch {} }, [noiseSuppression]);
@@ -188,6 +207,20 @@ export default function Settings() {
 			window.hexcall?.setAutoStart?.(startOnSystemStart);
 		} catch {} 
 	}, [startOnSystemStart]);
+
+	useEffect(() => { 
+		try { 
+			localStorage.setItem('hexcall-minimize-to-tray', minimizeToTray ? '1' : '0');
+			// Update Electron setting
+			window.hexcall?.setMinimizeToTray?.(minimizeToTray);
+		} catch {} 
+	}, [minimizeToTray]);
+
+	useEffect(() => { 
+		try { 
+			localStorage.setItem('hexcall-in-game-notifications', showInGameNotifications ? '1' : '0');
+		} catch {} 
+	}, [showInGameNotifications]);
 
 	useEffect(() => {
 		try {
@@ -249,6 +282,32 @@ export default function Settings() {
 		// Update voice client
 		setPushToTalkEnabled?.(usePushToTalk);
 	}, [usePushToTalk, pushToTalkKey, setPushToTalkEnabled]);
+
+	// Load and save push-to-mute settings
+	useEffect(() => {
+		try {
+			const savedPTM = localStorage.getItem('hexcall-push-to-mute');
+			if (savedPTM) {
+				const ptmSettings = JSON.parse(savedPTM);
+				setUsePushToMute(ptmSettings.enabled || false);
+				setPushToMuteKey(ptmSettings.key || 'V');
+			}
+		} catch {}
+	}, []);
+
+	useEffect(() => {
+		try {
+			localStorage.setItem('hexcall-push-to-mute', JSON.stringify({
+				enabled: usePushToMute,
+				key: pushToMuteKey
+			}));
+		} catch {}
+
+		// Update Electron settings
+		if (typeof window !== 'undefined' && window.hexcall?.pushToMuteUpdateSettings) {
+			window.hexcall.pushToMuteUpdateSettings(usePushToMute, pushToMuteKey);
+		}
+	}, [usePushToMute, pushToMuteKey]);
 
 	// Update event listeners
 	useEffect(() => {
@@ -634,6 +693,27 @@ export default function Settings() {
 								)}
 							</div>
 
+							<div>
+								<div className="flex items-center justify-between mb-3">
+									<div>
+										<label className="text-sm font-medium text-neutral-300">Push-to-Mute</label>
+										<p className="text-xs text-neutral-400 mt-1">Hold key to temporarily mute</p>
+									</div>
+									<label className="relative inline-flex items-center cursor-pointer">
+										<input type="checkbox" checked={usePushToMute} onChange={e => setUsePushToMute(e.target.checked)} className="sr-only peer" />
+										<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+									</label>
+								</div>
+								{usePushToMute && (
+								<input
+										className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl px-4 py-3 text-white focus:border-red-500/50 focus:ring-1 focus:ring-red-500/20 transition-colors text-center font-mono"
+									value={pushToMuteKey}
+									onChange={e => setPushToMuteKey(e.target.value)}
+										placeholder="Enter key..."
+									/>
+								)}
+							</div>
+
 							<div className="flex items-center justify-between">
 								<div>
 									<label className="text-sm font-medium text-neutral-300">Auto-join League Calls</label>
@@ -653,6 +733,17 @@ export default function Settings() {
 								<label className="relative inline-flex items-center cursor-pointer">
 									<input type="checkbox" checked={startOnSystemStart} onChange={e => setStartOnSystemStart(e.target.checked)} className="sr-only peer" />
 									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+								</label>
+							</div>
+
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">Minimize to Tray</label>
+									<p className="text-xs text-neutral-400 mt-1">Hide to system tray instead of closing</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={minimizeToTray} onChange={e => setMinimizeToTray(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
 								</label>
 							</div>
 						</div>
@@ -783,6 +874,17 @@ export default function Settings() {
 								</label>
 							</div>
 
+							<div className="flex items-center justify-between">
+								<div>
+									<label className="text-sm font-medium text-neutral-300">In-Game Notifications</label>
+									<p className="text-xs text-neutral-400 mt-1">Show when players join/leave during game</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input type="checkbox" checked={showInGameNotifications} onChange={e => setShowInGameNotifications(e.target.checked)} className="sr-only peer" />
+									<div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+								</label>
+							</div>
+
 							<div>
 								<label className="text-sm font-medium text-neutral-300 mb-2 block">Position</label>
 								<select 
@@ -797,28 +899,94 @@ export default function Settings() {
 								</select>
 							</div>
 
-							<div className="space-y-2">
-								<div className="flex justify-between">
-									<label className="text-sm font-medium text-neutral-300">Scale</label>
-									<span className="text-xs text-neutral-400 font-mono">{scale.toFixed(2)}x</span>
-								</div>
-									<input
-									type="range" 
-									min={0.75} 
-									max={1.5} 
-									step={0.05} 
-									value={scale} 
-									onChange={e => setScale(Number(e.target.value))} 
-									className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
-									style={{
-										background: `linear-gradient(to right, rgb(234 179 8) 0%, rgb(234 179 8) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) 100%)`
-									}}
-								/>
+						<div className="space-y-2">
+							<div className="flex justify-between">
+								<label className="text-sm font-medium text-neutral-300">Scale</label>
+								<span className="text-xs text-neutral-400 font-mono">{scale.toFixed(2)}x</span>
 							</div>
+							
+							{/* Quick Size Presets */}
+							<div className="flex gap-2 mb-3">
+								<button
+									onClick={() => setScale(0.75)}
+									className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+										scale === 0.75
+											? 'bg-yellow-500 text-black'
+											: 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+									}`}
+								>
+									Small
+								</button>
+								<button
+									onClick={() => setScale(1.0)}
+									className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+										scale === 1.0
+											? 'bg-yellow-500 text-black'
+											: 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+									}`}
+								>
+									Medium
+								</button>
+								<button
+									onClick={() => setScale(1.25)}
+									className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+										scale === 1.25
+											? 'bg-yellow-500 text-black'
+											: 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+									}`}
+								>
+									Large
+								</button>
+								<button
+									onClick={() => setScale(1.5)}
+									className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+										scale === 1.5
+											? 'bg-yellow-500 text-black'
+											: 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+									}`}
+								>
+									XL
+								</button>
+							</div>
+							
+							<input
+								type="range" 
+								min={0.75} 
+								max={1.5} 
+								step={0.05} 
+								value={scale} 
+								onChange={e => setScale(Number(e.target.value))} 
+								className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer slider"
+								style={{
+									background: `linear-gradient(to right, rgb(234 179 8) 0%, rgb(234 179 8) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) ${((scale - 0.75) / (1.5 - 0.75)) * 100}%, rgb(64 64 64) 100%)`
+								}}
+							/>
+						</div>
+
+						{/* Overlay Position Lock */}
+						<div className="flex items-center justify-between p-4 bg-neutral-800/50 rounded-lg">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+									<FaLock className="w-4 h-4 text-yellow-400" />
+								</div>
+								<div>
+									<div className="text-sm font-medium text-neutral-200">Lock Overlay Position</div>
+									<div className="text-xs text-neutral-400">Prevent accidental dragging during gameplay</div>
+								</div>
+							</div>
+							<button
+								onClick={() => setOverlayLocked(!overlayLocked)}
+								className={`relative w-12 h-6 rounded-full transition-colors ${
+									overlayLocked ? 'bg-green-500' : 'bg-neutral-600'
+								}`}
+							>
+								<div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform ${
+									overlayLocked ? 'right-0.5' : 'left-0.5'
+								}`} />
+							</button>
 						</div>
 					</div>
-
-					{/* App Updates */}
+				</div>					{/* App Updates */}
 					<div className="glass rounded-2xl p-6">
 						<div className="flex items-center gap-3 mb-6">
 							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
